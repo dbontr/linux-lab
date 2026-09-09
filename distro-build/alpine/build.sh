@@ -22,7 +22,7 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-for tool in curl sha256sum tar chroot mkfs.ext4 e2fsck truncate awk sed split find stat du cp mv chmod; do
+for tool in curl sha256sum tar chroot mkfs.ext4 e2fsck resize2fs dumpe2fs truncate awk sed split find du cp mv chmod; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -63,6 +63,18 @@ virtio_net
 9p
 EOF
 
+mkdir -p /etc/local.d /mnt/onedrive
+cat > /etc/local.d/onedrive.start <<'EOF'
+#!/bin/sh
+grep -qs ' /mnt/onedrive ' /proc/mounts && exit 0
+mount -t 9p -o trans=virtio,version=9p2000.L,msize=262144,access=any host9p /mnt/onedrive 2>/dev/null || true
+EOF
+chmod 0755 /etc/local.d/onedrive.start
+cat > /etc/motd <<'EOF'
+Linux Lab / Alpine Linux
+OneDrive is available at /mnt/onedrive when connected before boot.
+EOF
+
 cat > /etc/fstab <<'EOF'
 /dev/sda / ext4 rw,relatime 0 1
 proc /proc proc nosuid,noexec,nodev 0 0
@@ -79,6 +91,7 @@ rc-update add sysctl boot
 rc-update add hostname boot
 rc-update add networking boot
 rc-update add bootmisc boot
+rc-update add local default
 rc-update add killprocs shutdown
 rc-update add mount-ro shutdown
 
@@ -102,7 +115,12 @@ if [ "$NEEDED_MIB" -gt "$ROOT_IMAGE_MIB" ]; then ROOT_IMAGE_MIB="$NEEDED_MIB"; f
 truncate -s "${ROOT_IMAGE_MIB}M" "$RAW_IMAGE"
 mkfs.ext4 -q -F -d "$ROOTFS" -L linuxlab-root "$RAW_IMAGE"
 e2fsck -fy "$RAW_IMAGE" >/dev/null
-IMAGE_SIZE="$(stat -c %s "$RAW_IMAGE")"
+resize2fs -M "$RAW_IMAGE" >/dev/null
+e2fsck -fy "$RAW_IMAGE" >/dev/null
+BLOCK_COUNT="$(dumpe2fs -h "$RAW_IMAGE" 2>/dev/null | awk -F: '/Block count/{gsub(/ /,"",$2); print $2}')"
+BLOCK_SIZE="$(dumpe2fs -h "$RAW_IMAGE" 2>/dev/null | awk -F: '/Block size/{gsub(/ /,"",$2); print $2}')"
+IMAGE_SIZE="$((BLOCK_COUNT * BLOCK_SIZE))"
+truncate -s "$IMAGE_SIZE" "$RAW_IMAGE"
 PADDED_SIZE="$(( (IMAGE_SIZE + CHUNK_SIZE - 1) / CHUNK_SIZE * CHUNK_SIZE ))"
 truncate -s "$PADDED_SIZE" "$RAW_IMAGE"
 

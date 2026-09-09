@@ -98,7 +98,7 @@ The descriptor names a kernel, initramfs, aligned rootfs size, fixed chunk size,
 
 ## OneDrive
 
-When OneDrive is connected before boot, Linux Lab supplies a custom v86 `handle9p` server. In a compatible Linux guest, mount it with:
+When OneDrive is connected before boot, Linux Lab supplies a custom v86 `handle9p` server. The prepared Alpine guest mounts `host9p` at `/mnt/onedrive` during startup. Other compatible Linux guests can mount it with:
 
 ```bash
 mkdir -p /mnt/onedrive
