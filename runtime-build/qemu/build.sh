@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in git docker sha256sum; do
+for tool in git docker node sha256sum; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -24,6 +24,7 @@ rm -rf "$WORK_DIR" "$OUTPUT_DIR"
 mkdir -p "$WORK_DIR" "$OUTPUT_DIR" "$PACK_DIR"
 git clone --filter=blob:none --no-checkout https://github.com/ktock/qemu-wasm.git "$SOURCE_DIR"
 git -C "$SOURCE_DIR" checkout --detach "$QEMU_COMMIT"
+node "$SCRIPT_DIR/patch-upstream.mjs" "$SOURCE_DIR/Dockerfile"
 
 docker build -t "$IMAGE_NAME" -f "$SOURCE_DIR/Dockerfile" "$SOURCE_DIR"
 docker run --rm -d \
