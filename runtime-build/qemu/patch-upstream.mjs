@@ -7,7 +7,7 @@ const expected = 'RUN curl -Ls https://zlib.net/zlib-$ZLIB_VERSION.tar.xz | tar 
 const replacement = [
   'RUN curl -fLs https://zlib.net/fossils/zlib-1.3.1.tar.gz -o /tmp/zlib.tar.gz \\',
   '    && echo "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23  /tmp/zlib.tar.gz" | sha256sum -c - \\',
-  '    && tar xzC /zlib --strip-components=1 \\',
+  '    && tar xzC /zlib --strip-components=1 -f /tmp/zlib.tar.gz \\',
   '    && rm /tmp/zlib.tar.gz',
 ].join('\n')
 
