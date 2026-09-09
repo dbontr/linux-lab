@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createCustomManifest, validateRemoteUrl } from './catalog'
 
 describe('distro catalog', () => {
-  it('normalizes custom VM memory and selects the runtime automatically', () => {
+  it('normalizes custom VM memory and selects runtime and firmware automatically', () => {
     const manifest = createCustomManifest({
       name: 'Test',
       source: 'https://example.com/linux.iso',
@@ -12,6 +12,7 @@ describe('distro catalog', () => {
     expect(manifest.memoryMiB).toBe(256)
     expect(manifest.architecture).toBe('auto')
     expect(manifest.runtime).toBe('auto')
+    expect(manifest.firmware).toBe('auto')
     expect(manifest.media?.kind).toBe('cdrom')
   })
 

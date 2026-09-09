@@ -28,6 +28,8 @@ jobs:
         run: npm run sync:distros
       - name: Build Alpine browser image
         run: sudo bash distro-build/alpine/build.sh
+      - name: Verify built distro media
+        run: npm run verify:media
       - name: Restore x86-64 QEMU runtime
         id: qemu-cache
         uses: actions/cache@v4

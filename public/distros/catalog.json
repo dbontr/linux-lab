@@ -17,6 +17,7 @@
     "version": "3.24.1 64-bit",
     "architecture": "x86_64",
     "runtime": "qemu",
+    "firmware": "uefi",
     "summary": "Official 64-bit Alpine virtual ISO for the QEMU-Wasm compatibility runtime.",
     "media": { "kind": "cdrom", "path": "distros/alpine-virt-3.24.1-x86_64.iso" },
     "memoryMiB": 512,

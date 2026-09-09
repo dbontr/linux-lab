@@ -77,6 +77,7 @@ The checked-in host can be developed without rebuilding QEMU. A production-equiv
 
 ```bash
 sudo bash distro-build/alpine/build.sh
+npm run verify:media
 bash runtime-build/qemu/build.sh
 npm run build
 npm run preview

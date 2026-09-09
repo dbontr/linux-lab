@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "check": "npm run test && npm run build",
-    "sync:distros": "node scripts/sync-distros.mjs"
+    "sync:distros": "node scripts/sync-distros.mjs",
+    "verify:media": "node scripts/verify-built-media.mjs"
   },
   "dependencies": {
     "v86": "^0.5.458"
