@@ -22,7 +22,7 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-for tool in curl sha256sum tar chroot mkfs.ext4 e2fsck truncate awk sed split find stat du cp mv; do
+for tool in curl sha256sum tar chroot mkfs.ext4 e2fsck truncate awk sed split find stat du cp mv chmod; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -133,5 +133,8 @@ EOF
   cd "$OUTPUT_DIR"
   sha256sum vmlinuz initramfs boot.json rootfs-*.img > SHA256SUMS
 )
+
+# The builder runs as root in CI, while Vite copies public assets as the runner user.
+chmod -R a+rX "$OUTPUT_DIR"
 
 echo "Alpine Linux Lab image: $PADDED_SIZE bytes, $index chunks"
