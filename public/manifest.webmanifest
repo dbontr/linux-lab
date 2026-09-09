@@ -1,0 +1,10 @@
+{
+  "name": "Linux Lab",
+  "short_name": "Linux Lab",
+  "description": "Run compatible Linux distributions in your browser and mount OneDrive as guest storage.",
+  "start_url": "/linux-lab/",
+  "scope": "/linux-lab/",
+  "display": "standalone",
+  "background_color": "#0b0d0e",
+  "theme_color": "#111315"
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "alpine-3.24.1-x86",
+    "name": "Alpine Linux",
+    "version": "3.24.1",
+    "architecture": "x86",
+    "summary": "Current lightweight Alpine release tuned for fast browser boot and a writable lab session.",
+    "linux": { "descriptorPath": "distros/alpine-v86/boot.json" },
+    "memoryMiB": 256,
+    "vgaMemoryMiB": 8,
+    "networkDevice": "virtio",
+    "homepage": "https://alpinelinux.org/"
+  },
+  {
+    "id": "tinycore-11.0-x86",
+    "name": "Tiny Core Linux",
+    "version": "11.0",
+    "architecture": "x86",
+    "summary": "A tiny legacy-compatible Linux image used as a fast browser VM target.",
+    "media": { "kind": "cdrom", "path": "distros/TinyCore-11.0.iso" },
+    "memoryMiB": 256,
+    "vgaMemoryMiB": 8,
+    "networkDevice": "ne2k",
+    "homepage": "https://tinycorelinux.net/"
+  }
+]

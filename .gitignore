@@ -1,22 +1,29 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.local
+
+# Generated boot artifacts. GitHub Actions downloads and verifies these.
+public/distros/*.iso
+public/distros/*.img
+public/distros/alpine-v86/
+public/v86/*.bin
+!public/distros/catalog.json
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# Editors and operating systems
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
