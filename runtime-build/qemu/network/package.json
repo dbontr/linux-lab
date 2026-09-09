@@ -1,0 +1,12 @@
+{
+  "name": "linux-lab-qemu-network-build",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@bjorn3/browser_wasi_shim": "0.2.21",
+    "@mswjs/interceptors": "0.37.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

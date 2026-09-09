@@ -17,6 +17,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — `WORKERFS` provides read-only worker access to browser `File`/`Blob` objects without copying entire large media into Wasm memory.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
 - [container2wasm](https://github.com/container2wasm/container2wasm/tree/v0.5.0) — pinned c2w-net-proxy v0.5.0 runtime used for browser HTTP/HTTPS forwarding.
+- [esbuild](https://esbuild.github.io/) — pinned build-only bundler for the QEMU browser networking bridge.
 - [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) — cross-origin isolation on static hosts such as GitHub Pages; Linux Lab pins commit `7b1d2a092d0d2dd2b7270b6f12f13605de26f214`.
 
 ## 9P2000.L

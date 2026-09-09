@@ -14,6 +14,8 @@ WORK_DIR="${LINUX_LAB_QEMU_BUILD_DIR:-/tmp/linux-lab-qemu-wasm}"
 SOURCE_DIR="$WORK_DIR/source"
 PACK_DIR="$WORK_DIR/pack"
 NETWORK_SOURCE_DIR="$SOURCE_DIR/examples/networking/htdocs"
+NETWORK_TOOL_DIR="$SCRIPT_DIR/network"
+NETWORK_WORK_DIR="$WORK_DIR/network"
 NETWORK_OUTPUT_DIR="$OUTPUT_DIR/network"
 
 cleanup() {
@@ -21,7 +23,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in git docker node npm npx sha256sum bzip2 curl gzip; do
+for tool in git docker node npm sha256sum bzip2 curl gzip; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -31,15 +33,14 @@ git clone --filter=blob:none --no-checkout https://github.com/ktock/qemu-wasm.gi
 git -C "$SOURCE_DIR" checkout --detach "$QEMU_COMMIT"
 node "$SCRIPT_DIR/patch-upstream.mjs" "$SOURCE_DIR/Dockerfile"
 
-(
-  cd "$NETWORK_SOURCE_DIR"
-  npm ci --ignore-scripts
-  node "$SCRIPT_DIR/patch-networking.mjs" "$NETWORK_SOURCE_DIR/stack.js"
-  npx --no-install webpack --mode=production
-)
-mkdir -p "$NETWORK_OUTPUT_DIR"
-cp "$NETWORK_SOURCE_DIR/dist/stack.js" "$NETWORK_OUTPUT_DIR/stack.js"
-cp "$NETWORK_SOURCE_DIR/dist/stack-worker.js" "$NETWORK_OUTPUT_DIR/stack-worker.js"
+mkdir -p "$NETWORK_WORK_DIR" "$NETWORK_OUTPUT_DIR"
+cp "$NETWORK_SOURCE_DIR/stack.js" "$NETWORK_WORK_DIR/stack.js"
+cp "$NETWORK_SOURCE_DIR/stack-worker.js" "$NETWORK_WORK_DIR/stack-worker.js"
+cp "$NETWORK_SOURCE_DIR/wasi-util.js" "$NETWORK_WORK_DIR/wasi-util.js"
+node "$SCRIPT_DIR/patch-networking.mjs" "$NETWORK_WORK_DIR/stack.js"
+npm ci --ignore-scripts --prefix "$NETWORK_TOOL_DIR"
+node "$NETWORK_TOOL_DIR/bundle.mjs" "$NETWORK_WORK_DIR/stack.js" "$NETWORK_OUTPUT_DIR/stack.js" Stack
+node "$NETWORK_TOOL_DIR/bundle.mjs" "$NETWORK_WORK_DIR/stack-worker.js" "$NETWORK_OUTPUT_DIR/stack-worker.js"
 C2W_NET_URL="https://github.com/container2wasm/container2wasm/releases/download/$C2W_NET_VERSION/c2w-net-proxy.wasm"
 curl -fL "$C2W_NET_URL" -o "$WORK_DIR/c2w-net-proxy.wasm"
 echo "$C2W_NET_SHA256  $WORK_DIR/c2w-net-proxy.wasm" | sha256sum -c -
@@ -47,7 +48,7 @@ gzip -9 -n -c "$WORK_DIR/c2w-net-proxy.wasm" > "$NETWORK_OUTPUT_DIR/c2w-net-prox
 C2W_NET_LICENSE_URL="https://raw.githubusercontent.com/container2wasm/container2wasm/$C2W_NET_VERSION/LICENSE"
 curl -fL "$C2W_NET_LICENSE_URL" -o "$NETWORK_OUTPUT_DIR/LICENSE.apache-2.0"
 echo "$C2W_NET_LICENSE_SHA256  $NETWORK_OUTPUT_DIR/LICENSE.apache-2.0" | sha256sum -c -
-node "$SCRIPT_DIR/package-network-licenses.mjs" "$NETWORK_SOURCE_DIR" "$NETWORK_OUTPUT_DIR/THIRD_PARTY_LICENSES.txt"
+node "$SCRIPT_DIR/package-network-licenses.mjs" "$NETWORK_TOOL_DIR" "$NETWORK_OUTPUT_DIR/THIRD_PARTY_LICENSES.txt"
 cat > "$NETWORK_OUTPUT_DIR/NOTICE.txt" <<EOF
 Linux Lab QEMU browser networking runtime
 
