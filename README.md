@@ -33,7 +33,7 @@ GitHub Pages
   QEMU-Wasm backend
     x86-64 PC system emulation
     SDL2 display/input
-    WORKERFS local ISO/IMG media
+    Range-backed browser ISO/IMG media
     SeaBIOS + EDK2 UEFI firmware
     Browser HTTP/HTTPS proxy
 ```
@@ -57,7 +57,7 @@ The automatic path is:
 
 The dialog exposes media, runtime, and firmware overrides for ambiguous or unusual images. Remote HTTP(S) media remains supported when the source permits cross-origin browser access.
 
-QEMU uses Emscripten `WORKERFS` for local media, allowing large local files to be read from the browser `File` without first duplicating the entire image into WebAssembly memory.
+QEMU reads local media through a read-only `linuxlab:` block protocol backed by ranged reads from a browser `blob:` URL. Large ISO/IMG files stay browser-owned and are not copied into WebAssembly memory before boot.
 
 ## QEMU browser networking
 

@@ -6,6 +6,7 @@ const log = document.getElementById('log')
 const qemuBase = new URL('../qemu/', location.href)
 const networkBase = new URL('network/', qemuBase)
 let bootStarted = false
+let mediaObjectUrl = null
 
 function post(type, detail = {}) {
   parent.postMessage({ source: SOURCE, type, ...detail }, location.origin)
@@ -35,12 +36,19 @@ function loadClassicScript(url) {
   })
 }
 
-function safeMediaFile(file, kind) {
-  const name = kind === 'cdrom' ? 'boot.iso' : 'boot.img'
-  return new File([file], name, { type: file.type, lastModified: file.lastModified })
+function browserMediaSource(file) {
+  releaseMediaUrl()
+  mediaObjectUrl = URL.createObjectURL(file)
+  return `linuxlab:${file.size}:${mediaObjectUrl}`
 }
 
-function bootArguments(file, kind, requestedMemory, firmware, networkEnabled) {
+function releaseMediaUrl() {
+  if (!mediaObjectUrl) return
+  URL.revokeObjectURL(mediaObjectUrl)
+  mediaObjectUrl = null
+}
+
+function bootArguments(mediaSource, kind, requestedMemory, firmware, networkEnabled) {
   const memory = Math.max(256, Math.min(1024, Number(requestedMemory) || 512))
   const args = [
     '-m', `${memory}M`,
@@ -73,12 +81,12 @@ function bootArguments(file, kind, requestedMemory, firmware, networkEnabled) {
 
   if (kind === 'cdrom') {
     args.push(
-      '-drive', `file=/media/${file.name},media=cdrom,readonly=on,if=ide`,
+      '-drive', `file=${mediaSource},media=cdrom,readonly=on,if=ide,format=raw`,
       '-boot', 'order=d',
     )
   } else {
     args.push(
-      '-drive', `file=/media/${file.name},format=raw,if=ide,snapshot=on`,
+      '-drive', `file=${mediaSource},format=raw,if=ide,snapshot=on`,
       '-boot', 'order=c',
     )
   }
@@ -120,7 +128,8 @@ async function boot(request) {
     throw new Error('x86-64 runtime requires cross-origin isolation. Reload the page once and try again.')
   }
   if (!(request.file instanceof File)) throw new Error('Uploaded boot media is missing')
-  const media = safeMediaFile(request.file, request.kind)
+  const media = request.file
+  const mediaSource = browserMediaSource(media)
   let networkCertificate = null
   try {
     appendLog('Starting browser network bridge...')
@@ -132,9 +141,8 @@ async function boot(request) {
 
   const networkEnabled = networkCertificate !== null
   const moduleConfig = {
-    arguments: bootArguments(media, request.kind, request.memoryMiB, request.firmware, networkEnabled),
+    arguments: bootArguments(mediaSource, request.kind, request.memoryMiB, request.firmware, networkEnabled),
     canvas: screen,
-    linuxLabMedia: media,
     linuxLabNetworkCert: networkCertificate,
     mainScriptUrlOrBlob: asset('out.js'),
     locateFile: (name) => asset(name),
@@ -146,6 +154,7 @@ async function boot(request) {
       post('running', { network: networkEnabled })
     },
     onAbort: (reason) => {
+      releaseMediaUrl()
       post('error', { message: `QEMU aborted: ${String(reason)}` })
     },
   }
@@ -163,12 +172,14 @@ addEventListener('message', (event) => {
   if (event.origin !== location.origin || event.source !== parent) return
   if (event.data?.type !== 'boot') return
   void boot(event.data).catch((error) => {
+    releaseMediaUrl()
     appendLog(error instanceof Error ? error.stack ?? error.message : String(error))
     post('error', { message: error instanceof Error ? error.message : String(error) })
   })
 })
 
 addEventListener('pagehide', () => {
+  releaseMediaUrl()
   if (window.Stack && typeof window.Stack.Stop === 'function') window.Stack.Stop()
 })
 

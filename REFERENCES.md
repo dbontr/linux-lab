@@ -14,7 +14,10 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 
 ## Browser runtime support
 
-- [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — `WORKERFS` provides read-only worker access to browser `File`/`Blob` objects without copying entire large media into Wasm memory.
+- [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
+- [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
+- [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
+- [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS` bridge used by the QEMU block protocol for browser range reads.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
 - [container2wasm](https://github.com/container2wasm/container2wasm/tree/v0.5.0) — pinned c2w-net-proxy v0.5.0 runtime used for browser HTTP/HTTPS forwarding.
 - [esbuild](https://esbuild.github.io/) — pinned build-only bundler for the QEMU browser networking bridge.
@@ -51,7 +54,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 ## Project decisions derived from these references
 
 - Linux Lab uses two runtime backends: v86 for the prepared 32-bit path and QEMU-Wasm for x86-64 or architecture-unknown PC ISO/IMG media.
-- Local ISO/IMG uploads remain browser `File` objects. QEMU mounts them through `WORKERFS` so large source media does not need to be duplicated into Wasm memory before boot.
+- Local ISO/IMG uploads remain browser `File` objects. QEMU reads them through a read-only `linuxlab:` block protocol backed by ranged reads from a same-origin `blob:` URL, so large source media is not duplicated into Wasm memory before boot.
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.

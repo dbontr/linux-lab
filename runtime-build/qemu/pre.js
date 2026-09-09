@@ -1,16 +1,10 @@
 Module['preRun'] = Module['preRun'] || [];
 Module['preRun'].push(function () {
-  var media = Module['linuxLabMedia'];
-  if (media) {
-    ensureDirectory('/media');
-    FS.mount(WORKERFS, { files: [media] }, '/media');
-  }
-
   var certificate = Module['linuxLabNetworkCert'];
-  if (certificate) {
-    ensureDirectory('/.wasmenv');
-    FS.writeFile('/.wasmenv/proxy.crt', certificate);
-  }
+  if (!certificate) return;
+
+  ensureDirectory('/.wasmenv');
+  FS.writeFile('/.wasmenv/proxy.crt', certificate);
 });
 
 function ensureDirectory(path) {
