@@ -13,7 +13,7 @@ Linux Lab boots compatible Linux PC media directly in a browser from GitHub Page
 - Automatic ISO-versus-disk detection with manual override.
 - Automatic runtime and BIOS/UEFI selection with manual overrides.
 - Prepared Alpine x86, Alpine x86-64, and Tiny Core catalog targets.
-- Browser-native networking for v86 guests.
+- Browser-native networking for v86 guests and browser-proxied HTTP/HTTPS for QEMU guests.
 - Optional OneDrive storage exposed to compatible v86 guests as `host9p`.
 - PKCE Microsoft authentication with no client secret and no OAuth token exposed to the guest.
 - SHA-256-pinned external boot/build inputs and reproducible GitHub Actions deployment.
@@ -35,6 +35,7 @@ GitHub Pages
     SDL2 display/input
     WORKERFS local ISO/IMG media
     SeaBIOS + EDK2 UEFI firmware
+    Browser HTTP/HTTPS proxy
 ```
 
 The host selects a runtime from the manifest. Prepared 32-bit guests use v86. x86-64 and architecture-unknown PC media use QEMU-Wasm unless the user explicitly overrides it.
@@ -58,11 +59,19 @@ The dialog exposes media, runtime, and firmware overrides for ambiguous or unusu
 
 QEMU uses Emscripten `WORKERFS` for local media, allowing large local files to be read from the browser `File` without first duplicating the entire image into WebAssembly memory.
 
+## QEMU browser networking
+
+QEMU guests receive a virtio NIC connected to an in-browser network stack derived from the pinned qemu-wasm networking example and container2wasm c2w-net-proxy v0.5.0. No server or local daemon is required.
+
+The guest must acquire DHCP, mount the read-only `wasm0` share to obtain the proxy certificate, and set the HTTP/HTTPS proxy environment variables. Linux Lab exposes a copyable setup command when a QEMU guest is selected.
+
+This path supports HTTP and HTTPS through the browser Fetch API. Browser CORS policy still applies, and arbitrary TCP/UDP protocols are not provided by the static Pages deployment.
+
 ## OneDrive
 
 OneDrive integration currently belongs to the v86 backend. When connected before boot, Linux Lab exposes a custom `9P2000.L` server as `host9p`. Prepared Alpine mounts it at `/mnt/onedrive` automatically; other compatible v86 Linux guests can mount it manually.
 
-The QEMU x86-64 path does not yet expose the OneDrive 9P bridge or browser networking. Those are backend capability gaps, not guest-image format restrictions.
+The QEMU x86-64 path does not yet expose the OneDrive 9P bridge. That storage bridge remains a backend capability gap, not a guest-image format restriction.
 
 ## Run locally
 
@@ -83,7 +92,7 @@ npm run build
 npm run preview
 ```
 
-The QEMU builder requires Git, Docker, Node.js, `sha256sum`, and `bzip2`. It checks out a pinned `qemu-wasm` commit, verifies its repaired zlib input, builds `x86_64-softmmu` with Emscripten pthreads and SDL2, packages PC BIOS/UEFI firmware, and emits checksums for generated runtime assets.
+The QEMU builder requires Git, Docker, Node.js/npm, `curl`, `gzip`, `sha256sum`, and `bzip2`. It checks out a pinned `qemu-wasm` commit, verifies its repaired zlib input, builds `x86_64-softmmu` with Emscripten pthreads and SDL2, packages PC BIOS/UEFI firmware, and emits checksums for generated runtime assets.
 
 Generated VM images and QEMU binaries are ignored by Git and rebuilt or restored from the GitHub Actions cache during deployment.
 
@@ -91,7 +100,7 @@ Generated VM images and QEMU binaries are ignored by Git and rebuilt or restored
 
 `npm run check` runs the protocol/media unit tests, strict TypeScript compilation, and the production Vite build. The media tests cover ISO detection, El Torito UEFI detection, GPT EFI System Partition detection, and BIOS fallback.
 
-The Pages workflow repeats verification and builds the source-pinned QEMU-Wasm runtime before deployment.
+The Pages workflow repeats verification, validates generated distro media, and builds the source-pinned QEMU-Wasm runtime and network bridge before deployment.
 
 ## Compatibility boundary
 

@@ -16,6 +16,7 @@ interface QemuMessage {
   type?: string
   isolated?: boolean
   message?: string
+  network?: boolean
 }
 
 export class QemuRuntime implements VirtualMachineRuntime {
@@ -129,7 +130,7 @@ export class QemuRuntime implements VirtualMachineRuntime {
       this.isRunning = true
       this.status({
         phase: 'running',
-        message: `${this.lastManifest?.name ?? 'Linux'} is running`,
+        message: `${this.lastManifest?.name ?? 'Linux'} is running${event.data.network ? '; browser network bridge ready' : '; offline'}`,
         runtime: 'qemu',
       })
     } else if (event.data.type === 'error') {

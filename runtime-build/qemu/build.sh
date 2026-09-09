@@ -2,6 +2,9 @@
 set -euo pipefail
 
 QEMU_COMMIT="0ef7b4e2814b231705d8371dd7997f5b72e70baf"
+C2W_NET_VERSION="v0.5.0"
+C2W_NET_SHA256="b01b09c3a60444c3ebaca9ef60a63b7581ebea5a00c6b7844eded719c98b5aa1"
+C2W_NET_LICENSE_SHA256="cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 IMAGE_NAME="linux-lab-qemu-wasm"
 CONTAINER_NAME="linux-lab-qemu-wasm-build"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,13 +13,15 @@ OUTPUT_DIR="${1:-$REPO_ROOT/public/qemu}"
 WORK_DIR="${LINUX_LAB_QEMU_BUILD_DIR:-/tmp/linux-lab-qemu-wasm}"
 SOURCE_DIR="$WORK_DIR/source"
 PACK_DIR="$WORK_DIR/pack"
+NETWORK_SOURCE_DIR="$SOURCE_DIR/examples/networking/htdocs"
+NETWORK_OUTPUT_DIR="$OUTPUT_DIR/network"
 
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-for tool in git docker node sha256sum bzip2; do
+for tool in git docker node npm npx sha256sum bzip2 curl gzip; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -25,6 +30,31 @@ mkdir -p "$WORK_DIR" "$OUTPUT_DIR" "$PACK_DIR"
 git clone --filter=blob:none --no-checkout https://github.com/ktock/qemu-wasm.git "$SOURCE_DIR"
 git -C "$SOURCE_DIR" checkout --detach "$QEMU_COMMIT"
 node "$SCRIPT_DIR/patch-upstream.mjs" "$SOURCE_DIR/Dockerfile"
+
+(
+  cd "$NETWORK_SOURCE_DIR"
+  npm ci --ignore-scripts
+  node "$SCRIPT_DIR/patch-networking.mjs" "$NETWORK_SOURCE_DIR/stack.js"
+  npx --no-install webpack --mode=production
+)
+mkdir -p "$NETWORK_OUTPUT_DIR"
+cp "$NETWORK_SOURCE_DIR/dist/stack.js" "$NETWORK_OUTPUT_DIR/stack.js"
+cp "$NETWORK_SOURCE_DIR/dist/stack-worker.js" "$NETWORK_OUTPUT_DIR/stack-worker.js"
+C2W_NET_URL="https://github.com/container2wasm/container2wasm/releases/download/$C2W_NET_VERSION/c2w-net-proxy.wasm"
+curl -fL "$C2W_NET_URL" -o "$WORK_DIR/c2w-net-proxy.wasm"
+echo "$C2W_NET_SHA256  $WORK_DIR/c2w-net-proxy.wasm" | sha256sum -c -
+gzip -9 -n -c "$WORK_DIR/c2w-net-proxy.wasm" > "$NETWORK_OUTPUT_DIR/c2w-net-proxy.wasm.gz"
+C2W_NET_LICENSE_URL="https://raw.githubusercontent.com/container2wasm/container2wasm/$C2W_NET_VERSION/LICENSE"
+curl -fL "$C2W_NET_LICENSE_URL" -o "$NETWORK_OUTPUT_DIR/LICENSE.apache-2.0"
+echo "$C2W_NET_LICENSE_SHA256  $NETWORK_OUTPUT_DIR/LICENSE.apache-2.0" | sha256sum -c -
+node "$SCRIPT_DIR/package-network-licenses.mjs" "$NETWORK_SOURCE_DIR" "$NETWORK_OUTPUT_DIR/THIRD_PARTY_LICENSES.txt"
+cat > "$NETWORK_OUTPUT_DIR/NOTICE.txt" <<EOF
+Linux Lab QEMU browser networking runtime
+
+qemu-wasm examples/networking, commit $QEMU_COMMIT: Apache-2.0 as declared by its package manifest.
+container2wasm c2w-net-proxy $C2W_NET_VERSION: Apache-2.0.
+Bundled npm dependency notices and license texts are in THIRD_PARTY_LICENSES.txt.
+EOF
 
 docker build -t "$IMAGE_NAME" -f "$SOURCE_DIR/Dockerfile" "$SOURCE_DIR"
 docker run --rm -d \
@@ -97,7 +127,9 @@ cat > "$OUTPUT_DIR/runtime.json" <<EOF
   "qemuCommit": "$QEMU_COMMIT",
   "architecture": "x86_64",
   "display": "sdl2",
-  "localMedia": "workerfs"
+  "localMedia": "workerfs",
+  "network": "browser-http-https-proxy",
+  "networkProxyVersion": "$C2W_NET_VERSION"
 }
 EOF
 
@@ -109,6 +141,12 @@ EOF
     qemu-system-x86_64.worker.js \
     qemu-system-x86_64.data \
     load.js \
+    network/stack.js \
+    network/stack-worker.js \
+    network/c2w-net-proxy.wasm.gz \
+    network/LICENSE.apache-2.0 \
+    network/THIRD_PARTY_LICENSES.txt \
+    network/NOTICE.txt \
     runtime.json > SHA256SUMS
 )
 

@@ -7,6 +7,14 @@ import { OneDrive9PServer } from '../onedrive/p9Server'
 import { LinuxRuntime, runtimeForManifest, type RuntimeStatus } from '../runtime/linuxRuntime'
 
 const MOUNT_COMMAND = 'mkdir -p /mnt/onedrive && mount -t 9p -o trans=virtio,version=9p2000.L,msize=262144,access=any host9p /mnt/onedrive'
+const QEMU_NETWORK_COMMAND = [
+  "NET_IF=$(ls /sys/class/net | grep -vx 'lo' | head -n1)",
+  'if command -v ip >/dev/null; then ip link set "$NET_IF" up; else ifconfig "$NET_IF" up; fi',
+  'if command -v udhcpc >/dev/null; then udhcpc -i "$NET_IF"; elif command -v dhclient >/dev/null; then dhclient "$NET_IF"; elif command -v dhcpcd >/dev/null; then dhcpcd "$NET_IF"; fi',
+  "mkdir -p /mnt/linuxlab && (grep -qs ' /mnt/linuxlab ' /proc/mounts || mount -t 9p -o trans=virtio,version=9p2000.L wasm0 /mnt/linuxlab)",
+  'export SSL_CERT_FILE=/mnt/linuxlab/proxy.crt',
+  'export http_proxy=http://192.168.127.253:80 https_proxy=http://192.168.127.253:80 HTTP_PROXY=http://192.168.127.253:80 HTTPS_PROXY=http://192.168.127.253:80',
+].join('\n')
 
 export class LinuxLabApp {
   private catalog: DistroManifest[] = []
@@ -76,6 +84,7 @@ export class LinuxLabApp {
           <aside class="details-panel" aria-label="Session details">
             <section><span class="eyebrow">Distribution</span><h2 data-detail-name>None selected</h2><p class="muted" data-detail-summary></p><dl class="facts" data-facts></dl></section>
             <section class="storage-section"><span class="eyebrow">Persistent storage</span><div class="storage-status"><span class="status-dot" data-storage-dot></span><strong data-storage-label>OneDrive disconnected</strong></div><p class="muted" data-storage-help>When connected before boot, OneDrive is exposed to compatible guests as the <code>host9p</code> virtio filesystem.</p><div class="mount-tools" data-mount-tools hidden><code>${escapeHtml(MOUNT_COMMAND)}</code><div class="mount-actions"><button class="button" type="button" data-copy-mount>Copy command</button><button class="button" type="button" data-send-mount disabled>Send to VM</button></div></div></section>
+            <section data-network-section hidden><span class="eyebrow">Guest network</span><p class="muted">QEMU provides HTTP/HTTPS through a browser proxy. Run this once in a compatible Linux shell; browser CORS rules still apply.</p><div class="mount-tools"><code>${escapeHtml(QEMU_NETWORK_COMMAND)}</code><div class="mount-actions"><button class="button" type="button" data-copy-network>Copy setup</button></div></div></section>
             <section><span class="eyebrow">Session model</span><p class="muted">The Linux machine is disposable. Refresh or power it off for a clean start. OneDrive data remains independent of the guest.</p></section>
           </aside>
         </div>
@@ -106,6 +115,7 @@ export class LinuxLabApp {
     this.query<HTMLButtonElement>('[data-restart]').addEventListener('click', () => this.runtime?.restart())
     this.query<HTMLButtonElement>('[data-fullscreen]').addEventListener('click', () => this.runtime?.fullscreen())
     this.query<HTMLButtonElement>('[data-copy-mount]').addEventListener('click', () => void this.copyMountCommand())
+    this.query<HTMLButtonElement>('[data-copy-network]').addEventListener('click', () => void this.copyNetworkCommand())
     this.query<HTMLButtonElement>('[data-send-mount]').addEventListener('click', () => this.sendMountCommand())
     this.query<HTMLButtonElement>('[data-onedrive]').addEventListener('click', () => void this.toggleOneDrive())
   }
@@ -175,9 +185,10 @@ export class LinuxLabApp {
       this.addFact(facts, 'Boot source', distro.linux ? 'Prepared Linux image' : distro.media ? mediaKindLabel(distro.media.kind) : 'Unknown')
       this.addFact(facts, 'Runtime', runtimeLabel(distro))
       if (runtimeForManifest(distro) === 'qemu') this.addFact(facts, 'Firmware', firmwareKindLabel(distro.firmware ?? 'auto'))
-      this.addFact(facts, 'Network', runtimeForManifest(distro) === 'qemu' ? 'Offline' : (distro.networkDevice ?? 'ne2k') + ' / browser fetch')
+      this.addFact(facts, 'Network', runtimeForManifest(distro) === 'qemu' ? 'Browser HTTP/HTTPS proxy' : (distro.networkDevice ?? 'ne2k') + ' / browser fetch')
     }
     const qemuSelected = distro ? runtimeForManifest(distro) === 'qemu' : false
+    this.query<HTMLElement>('[data-network-section]').hidden = !qemuSelected
     this.query<HTMLElement>('[data-storage-help]').textContent = qemuSelected
       ? 'OneDrive host mounting is available in v86 guests. The QEMU filesystem bridge is not active yet.'
       : 'When connected before boot, OneDrive is exposed to Linux as the host9p virtio filesystem.'
@@ -252,6 +263,15 @@ export class LinuxLabApp {
     tools.hidden = !this.oneDriveConnected || qemu
     this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !this.runtime?.active || qemu
   }
+  private async copyNetworkCommand(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(QEMU_NETWORK_COMMAND)
+      this.setNotice('Network setup copied.', 'info')
+    } catch {
+      this.setNotice('Clipboard access is unavailable. Select the setup command and copy it manually.', 'error')
+    }
+  }
+
   private async copyMountCommand(): Promise<void> {
     try {
       await navigator.clipboard.writeText(MOUNT_COMMAND)

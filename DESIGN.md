@@ -40,6 +40,7 @@ The CSS variables in `src/style.css` are the source of truth:
 - Runtime selection is automatic by default. Known prepared x86 guests use v86; x86-64 and architecture-unknown PC media use QEMU-Wasm.
 - Architecture and selected runtime are visible in Details, but emulator choice is not a required decision for normal users.
 - Local ISO/IMG upload is the preferred custom-media path. Remote URLs remain an alternate input for CORS-compatible sources.
+- QEMU networking is available through a browser HTTP/HTTPS proxy. Keep its one-time guest setup visible only for QEMU selections and state the CORS/protocol limit.
 - Media type is auto-detected from ISO-9660 structure where possible, with an explicit ISO/IMG override for unusual images.
 - A capability unavailable in the active backend stays disabled rather than silently pretending to work.
 - The guest display has no Linux Lab overlays. Runtime controls and progress stay outside guest pixels.
