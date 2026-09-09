@@ -1,135 +1,101 @@
 # Linux Lab
 
-Linux Lab runs compatible Linux distributions directly in a web browser from GitHub Pages. The guest machine is disposable by default. Users can optionally connect Microsoft OneDrive and expose it to Linux as a `9P2000.L` virtio filesystem.
+Linux Lab boots compatible Linux PC media directly in a browser from GitHub Pages. It supports prepared 32-bit x86 guests, an x86-64 QEMU-Wasm compatibility runtime, local ISO/IMG uploads, and optional OneDrive storage for v86 guests.
 
 **Pages:** https://dbontr.github.io/linux-lab/
 
 ## What it provides
 
-- Real x86 Linux guests through [v86](https://github.com/copy/v86), not a simulated web desktop.
-- A manifest-driven distro catalog with Alpine Linux and Tiny Core Linux as initial targets.
-- User-supplied HTTP(S) ISO and disk images.
-- Browser-native networking through the v86 fetch backend.
-- Optional OneDrive storage exposed to the guest as `host9p`.
-- Read, write, create, rename, directory, lock, flush, and delete operations through a browser-side `9P2000.L` server.
-- PKCE Microsoft authentication with no client secret in the site.
-- SHA-256-pinned BIOS/media sources plus a reproducible Alpine x86 image builder.
-- Lazy 4 MiB root-disk chunks so prepared guests do not require a full disk download before boot.
-- GitHub Pages deployment with no application server.
+- Real guest operating systems, not a simulated web desktop.
+- v86 for the fast prepared x86 path.
+- Source-built QEMU-Wasm for x86-64 and general PC media.
+- Local ISO, IMG, and raw-disk upload without an application server.
+- Automatic ISO-versus-disk detection with manual override.
+- Automatic runtime and BIOS/UEFI selection with manual overrides.
+- Prepared Alpine x86, Alpine x86-64, and Tiny Core catalog targets.
+- Browser-native networking for v86 guests.
+- Optional OneDrive storage exposed to compatible v86 guests as `host9p`.
+- PKCE Microsoft authentication with no client secret and no OAuth token exposed to the guest.
+- SHA-256-pinned external boot/build inputs and reproducible GitHub Actions deployment.
+
+An accepted file is not necessarily bootable. The compatibility target is x86/x86-64 PC media that boots through legacy BIOS or UEFI using devices implemented by the selected browser runtime.
 
 ## Architecture
 
 ```text
-GitHub repository
-├── Vite/TypeScript browser shell
-├── distro catalog + pinned source manifest
-└── GitHub Actions
-        │
-        ├── verify/download distro media + BIOS
-        ├── build the Alpine browser root image
-        ├── test + build
-        └── deploy GitHub Pages
-
-Browser
-├── Linux Lab UI
-├── v86 WebAssembly x86 runtime
-│   ├── Linux guest
-│   ├── browser fetch network backend
-│   └── virtio 9P device (optional)
-└── OneDrive bridge
-    ├── Microsoft OAuth 2.0 + PKCE
-    ├── Microsoft Graph filesystem adapter
-    └── 9P2000.L server → host9p → /mnt/onedrive
+GitHub Pages
+  Host shell (Vite/TypeScript)
+  Distro/runtime assets
+  v86 backend
+    Prepared x86 Linux
+    Browser fetch networking
+    host9p -> OneDrive
+  QEMU-Wasm backend
+    x86-64 PC system emulation
+    SDL2 display/input
+    WORKERFS local ISO/IMG media
+    SeaBIOS + EDK2 UEFI firmware
 ```
 
-The guest root filesystem and OneDrive are deliberately separate. Destroying or replacing a guest does not alter the cloud-storage architecture.
+The host selects a runtime from the manifest. Prepared 32-bit guests use v86. x86-64 and architecture-unknown PC media use QEMU-Wasm unless the user explicitly overrides it.
+
+QEMU runs in a same-origin iframe. Replacing or removing the iframe provides a clean VM lifecycle boundary for Emscripten pthread workers and emulator state.
+
+## Custom ISO and IMG files
+
+Choose a local ISO, IMG, or raw disk from the custom-media dialog. Linux Lab keeps the selected browser `File` local to the device.
+
+The automatic path is:
+
+1. Detect ISO-9660 optical media from `CD001`; otherwise treat the file as a disk image.
+2. Route architecture-unknown PC media to QEMU-Wasm so either 32-bit or 64-bit x86 guests can boot.
+3. Detect UEFI ISOs from El Torito EFI entries.
+4. Detect UEFI disk images from MBR EFI partitions or GPT EFI System Partitions.
+5. Use legacy BIOS when no EFI boot structure is found.
+6. Boot with a generic PC machine, IDE optical/disk devices, and standard VGA.
+
+The dialog exposes media, runtime, and firmware overrides for ambiguous or unusual images. Remote HTTP(S) media remains supported when the source permits cross-origin browser access.
+
+QEMU uses Emscripten `WORKERFS` for local media, allowing large local files to be read from the browser `File` without first duplicating the entire image into WebAssembly memory.
+
+## OneDrive
+
+OneDrive integration currently belongs to the v86 backend. When connected before boot, Linux Lab exposes a custom `9P2000.L` server as `host9p`. Prepared Alpine mounts it at `/mnt/onedrive` automatically; other compatible v86 Linux guests can mount it manually.
+
+The QEMU x86-64 path does not yet expose the OneDrive 9P bridge or browser networking. Those are backend capability gaps, not guest-image format restrictions.
 
 ## Run locally
 
 ```bash
 npm ci
 npm run sync:distros
-npm test
+npm run check
 npm run dev
 ```
 
-For a production-equivalent build on Linux or WSL:
+The checked-in host can be developed without rebuilding QEMU. A production-equivalent artifact also needs generated VM/runtime files:
 
 ```bash
-npm run check
-npm run sync:distros
 sudo bash distro-build/alpine/build.sh
+bash runtime-build/qemu/build.sh
 npm run build
 npm run preview
 ```
 
-The Alpine builder starts from the pinned official x86 minirootfs, installs signed `v3.24` packages, creates a writable ext4 root, and splits it into GitHub-Pages-friendly chunks. Generated image files are ignored by Git.
+The QEMU builder requires Git, Docker, Node.js, `sha256sum`, and `bzip2`. It checks out a pinned `qemu-wasm` commit, verifies its repaired zlib input, builds `x86_64-softmmu` with Emscripten pthreads and SDL2, packages PC BIOS/UEFI firmware, and emits checksums for generated runtime assets.
 
-## Add or update a distro
-
-The browser UI does not contain distro-specific boot logic. Catalog entries live in `public/distros/catalog.json`. Reproducible upstream artifacts live in `distros/sources.json` with an exact SHA-256 digest.
-
-A catalog entry currently supports:
-
-```json
-{
-  "id": "example-x86",
-  "name": "Example Linux",
-  "version": "1.0",
-  "architecture": "x86",
-  "summary": "Example browser-compatible Linux image.",
-  "media": { "kind": "cdrom", "path": "distros/example.iso" },
-  "memoryMiB": 512,
-  "vgaMemoryMiB": 8,
-  "networkDevice": "virtio",
-  "homepage": "https://example.org/"
-}
-```
-
-For a conventional ISO/HDD entry, add the matching download source to `distros/sources.json`. `npm run sync:distros` fails closed if the downloaded bytes do not match the pinned digest.
-
-Prepared guests can instead reference a direct-Linux descriptor:
-
-```json
-"linux": { "descriptorPath": "distros/example-v86/boot.json" }
-```
-
-The descriptor names a kernel, initramfs, aligned rootfs size, fixed chunk size, and kernel command line. `distro-build/alpine/build.sh` is the reference implementation for producing this layout from an upstream distro.
-
-## OneDrive
-
-When OneDrive is connected before boot, Linux Lab supplies a custom v86 `handle9p` server. The prepared Alpine guest mounts `host9p` at `/mnt/onedrive` during startup. Other compatible Linux guests can mount it with:
-
-```bash
-mkdir -p /mnt/onedrive
-mount -t 9p -o trans=virtio,version=9p2000.L,msize=262144,access=any host9p /mnt/onedrive
-```
-
-Linux Lab maps ordinary guest file operations to Microsoft Graph. Cloud files use regular file/directory semantics. Unix-only concepts that OneDrive cannot represent faithfully, such as device nodes, hard links, and symbolic links, are intentionally not emulated as native OneDrive objects.
-
-### Microsoft application registration
-
-The site uses an OAuth public-client identifier and never contains a client secret. The deployed Pages URL must be allowed as a SPA redirect URI in the Microsoft application registration:
-
-```text
-https://dbontr.github.io/linux-lab/
-```
-
-A different public client ID can be injected at build time with `VITE_MICROSOFT_CLIENT_ID`.
-
-## Current compatibility boundary
-
-The current v86 engine emulates 32-bit x86 and does not provide x86-64 or multicore CPU support. Linux Lab therefore rejects claims of general modern x86-64 distro compatibility. Alpine x86 and Tiny Core x86 are the initial verified catalog targets. The runtime layer is isolated so a future x86-64 browser backend can be added without redesigning the catalog or OneDrive filesystem.
+Generated VM images and QEMU binaries are ignored by Git and rebuilt or restored from the GitHub Actions cache during deployment.
 
 ## Verification
 
-```bash
-npm test
-npm run build
-```
+`npm run check` runs the protocol/media unit tests, strict TypeScript compilation, and the production Vite build. The media tests cover ISO detection, El Torito UEFI detection, GPT EFI System Partition detection, and BIOS fallback.
 
-The protocol test suite exercises 9P negotiation plus create, write, flush, read, rename, and unlink operations against an in-memory cloud filesystem. The Pages workflow repeats tests before every deployment.
+The Pages workflow repeats verification and builds the source-pinned QEMU-Wasm runtime before deployment.
+
+## Compatibility boundary
+
+Linux Lab targets x86 and x86-64 PC boot media, not arbitrary CPU architectures or malformed/non-bootable files. Browser WebAssembly memory and CPU-emulation cost also impose stricter limits than native QEMU, especially for memory-heavy desktop distributions.
 
 ## License
 
-MIT. Third-party guest images and v86 remain under their respective licenses.
+MIT. QEMU, v86, guest distributions, firmware, and other third-party assets remain under their respective licenses.

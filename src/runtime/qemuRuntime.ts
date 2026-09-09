@@ -1,4 +1,5 @@
 import { localMediaFile, mediaUrl } from '../catalog/catalog'
+import { detectFirmwareKind } from '../catalog/mediaProbe'
 import type { DistroManifest, MediaKind } from '../catalog/types'
 import type {
   RuntimeOptions,
@@ -59,10 +60,14 @@ export class QemuRuntime implements VirtualMachineRuntime {
       await this.destroy()
       throw new Error('The x86-64 runtime requires cross-origin isolation. Reload Linux Lab and try again.')
     }
+    const firmware = manifest.firmware && manifest.firmware !== 'auto'
+      ? manifest.firmware
+      : await detectFirmwareKind(file, manifest.media.kind)
     iframe.contentWindow?.postMessage({
       type: 'boot',
       file,
       kind: manifest.media.kind,
+      firmware,
       memoryMiB: manifest.memoryMiB,
     }, location.origin)
   }

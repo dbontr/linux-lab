@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for tool in git docker node sha256sum; do
+for tool in git docker node sha256sum bzip2; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -68,6 +68,14 @@ for firmware in \
   fi
 done
 
+for firmware in edk2-x86_64-code.fd edk2-i386-vars.fd; do
+  source="$SOURCE_DIR/pc-bios/$firmware.bz2"
+  if [ ! -f "$source" ]; then
+    echo "required UEFI firmware is missing: $firmware" >&2
+    exit 1
+  fi
+  bzip2 -dc "$source" > "$PACK_DIR/$firmware"
+done
 if [ ! -f "$PACK_DIR/bios-256k.bin" ] || [ ! -f "$PACK_DIR/vgabios-stdvga.bin" ]; then
   echo "required PC firmware is missing" >&2
   exit 1

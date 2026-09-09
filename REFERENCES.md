@@ -1,13 +1,21 @@
 # References
 
-These sources define Linux Lab's external interfaces, compatibility assumptions, and deployment behavior.
+These sources define Linux Lab's external interfaces, compatibility assumptions, runtime build contracts, and deployment behavior.
 
 ## Browser virtualization
 
-- [copy/v86](https://github.com/copy/v86) — upstream emulator, API, compatibility limits, BIOS sources, and browser embedding model.
+- [copy/v86](https://github.com/copy/v86) — fast 32-bit x86 emulator, browser embedding API, BIOS sources, networking, and `host9p` filesystem support.
 - [v86 filesystem documentation](https://github.com/copy/v86/blob/master/docs/filesystem.md) — virtio 9P mount behavior and the `host9p` share.
 - [v86 networking documentation](https://github.com/copy/v86/blob/master/docs/networking.md) — browser network backends and guest NIC behavior.
-- [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/WASM runtime used by the frontend.
+- [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/Wasm runtime used by the 32-bit backend.
+- [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) — QEMU system emulation compiled to WebAssembly; Linux Lab pins commit `0ef7b4e2814b231705d8371dd7997f5b72e70baf` for the x86-64 backend.
+- [QEMU](https://www.qemu.org/) — PC machine, x86-64 CPU, IDE/optical disk, VGA, and firmware semantics inherited by the compatibility backend.
+
+## Browser runtime support
+
+- [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — `WORKERFS` provides read-only worker access to browser `File`/`Blob` objects without copying entire large media into Wasm memory.
+- [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
+- [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) — cross-origin isolation on static hosts such as GitHub Pages; Linux Lab pins commit `7b1d2a092d0d2dd2b7270b6f12f13605de26f214`.
 
 ## 9P2000.L
 
@@ -24,10 +32,11 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Create an upload session](https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession) — resumable large-file writes.
 - [Move a DriveItem](https://learn.microsoft.com/en-us/graph/api/driveitem-move) — rename and move semantics.
 
-## Distribution artifacts
+## Distribution and build artifacts
 
-- [Alpine Linux downloads](https://dl-cdn.alpinelinux.org/alpine/) — official Alpine x86 minirootfs and signed package repositories used by the prepared browser image builder.
-- [v86 test images](https://i.copy.sh/) — upstream v86-compatible Tiny Core image used by the initial catalog.
+- [Alpine Linux downloads](https://dl-cdn.alpinelinux.org/alpine/) — official x86 minirootfs and x86-64 virtual ISO used by the verified catalog fixtures.
+- [zlib fossil archive](https://zlib.net/fossils/) — immutable zlib 1.3.1 source used to repair the pinned QEMU-Wasm build dependency; SHA-256 is verified before extraction.
+- [v86 test images](https://i.copy.sh/) — upstream v86-compatible Tiny Core image used by the catalog.
 - [Tiny Core Linux](https://tinycorelinux.net/) — Tiny Core project homepage and distribution information.
 
 ## GitHub Pages and build tooling
@@ -38,7 +47,11 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 
 ## Project decisions derived from these references
 
-- The initial runtime supports 32-bit x86 guests only because current v86 does not implement x86-64.
-- OneDrive is mounted as user storage instead of used as a Linux block device because Microsoft Graph exposes object/file semantics rather than a POSIX block filesystem.
+- Linux Lab uses two runtime backends: v86 for the prepared 32-bit path and QEMU-Wasm for x86-64 or architecture-unknown PC ISO/IMG media.
+- Local ISO/IMG uploads remain browser `File` objects. QEMU mounts them through `WORKERFS` so large source media does not need to be duplicated into Wasm memory before boot.
+- The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
+- QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
+- OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.
+- OneDrive is mounted as user storage rather than used as a Linux block device because Microsoft Graph exposes object/file semantics rather than a POSIX block filesystem.
 - Linux Lab implements the `9P2000.L` subset needed for ordinary file and directory workflows. Unsupported Unix object types fail explicitly instead of being silently misrepresented.
-- External BIOS/media sources and the Alpine minirootfs are SHA-256 pinned; prepared Alpine boot artifacts are reproduced during the Pages build instead of committed as large binaries.
+- External BIOS/media/build sources are pinned or SHA-256 verified; generated VM artifacts are produced by GitHub Actions rather than committed as large binaries.

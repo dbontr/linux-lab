@@ -5,6 +5,7 @@ import type {
   DirectLinuxBootDescriptor,
   DistroManifest,
   DistroMedia,
+  FirmwareKind,
   MediaKind,
   RuntimeKind,
 } from './types'
@@ -65,6 +66,7 @@ export function createCustomManifest(request: CustomBootRequest): DistroManifest
     version: 'custom',
     architecture: 'auto',
     runtime: request.runtime ?? 'auto',
+    firmware: request.firmware ?? 'auto',
     summary: 'User-supplied PC boot media. Linux Lab selects the compatible browser runtime.',
     media,
     memoryMiB,
@@ -95,6 +97,8 @@ function validateManifest(value: unknown, index: number): DistroManifest {
   if (linux) result.linux = linux
   const runtime = validateRuntime(entry.runtime)
   if (runtime) result.runtime = runtime
+  const firmware = validateFirmware(entry.firmware)
+  if (firmware) result.firmware = firmware
   if (entry.networkDevice === 'ne2k' || entry.networkDevice === 'virtio') {
     result.networkDevice = entry.networkDevice
   }
@@ -169,6 +173,12 @@ function validateRuntime(value: unknown): RuntimeKind | undefined {
   if (value === undefined) return undefined
   if (value === 'v86' || value === 'qemu' || value === 'auto') return value
   throw new Error('Distro runtime must be v86, qemu, or auto')
+}
+
+function validateFirmware(value: unknown): FirmwareKind | undefined {
+  if (value === undefined) return undefined
+  if (value === 'bios' || value === 'uefi' || value === 'auto') return value
+  throw new Error('Distro firmware must be bios, uefi, or auto')
 }
 
 function validateLocalAssetPath(value: string): string {

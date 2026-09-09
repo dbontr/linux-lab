@@ -1,6 +1,6 @@
 import { createCustomManifest, loadCatalog } from '../catalog/catalog'
-import { detectMediaKind, mediaKindLabel } from '../catalog/mediaProbe'
-import type { DistroManifest, MediaKind, RuntimeKind } from '../catalog/types'
+import { detectMediaKind, firmwareKindLabel, mediaKindLabel } from '../catalog/mediaProbe'
+import type { DistroManifest, FirmwareKind, MediaKind, RuntimeKind } from '../catalog/types'
 import { beginOneDriveConnect, disconnectOneDrive, finishOneDriveCallback, getOneDriveSession } from '../onedrive/auth'
 import { OneDriveFilesystem } from '../onedrive/graph'
 import { OneDrive9PServer } from '../onedrive/p9Server'
@@ -89,7 +89,7 @@ export class LinuxLabApp {
           <div class="source-separator"><span>or use a URL</span></div>
           <label>Remote ISO or IMG URL<input name="url" type="url" placeholder="https://example.org/linux.iso" /></label>
           <div class="form-row"><label>Media<select name="kind"><option value="auto" selected>Auto detect</option><option value="cdrom">ISO / optical disc</option><option value="hda">IMG / hard disk</option></select></label><label>Memory<select name="memory"><option>256</option><option selected>512</option><option>768</option><option>1024</option></select></label></div>
-          <label>Runtime<select name="runtime"><option value="auto" selected>Auto - 32/64-bit</option><option value="qemu">QEMU - x86-64 compatible</option><option value="v86">v86 - legacy 32-bit</option></select></label>
+          <div class="form-row"><label>Runtime<select name="runtime"><option value="auto" selected>Auto - 32/64-bit</option><option value="qemu">QEMU - x86-64 compatible</option><option value="v86">v86 - legacy 32-bit</option></select></label><label>Firmware<select name="firmware"><option value="auto" selected>Auto detect</option><option value="uefi">UEFI</option><option value="bios">Legacy BIOS</option></select></label></div>
           <p class="muted">Local uploads stay on this device. Auto selects the browser runtime and detects ISO versus disk media.</p>
           <div class="dialog-actions"><button class="button" value="cancel" formnovalidate>Cancel</button><button class="button primary" value="default" data-custom-submit>Boot image</button></div>
         </form>
@@ -174,6 +174,7 @@ export class LinuxLabApp {
       this.addFact(facts, 'Memory', `${distro.memoryMiB} MiB`)
       this.addFact(facts, 'Boot source', distro.linux ? 'Prepared Linux image' : distro.media ? mediaKindLabel(distro.media.kind) : 'Unknown')
       this.addFact(facts, 'Runtime', runtimeLabel(distro))
+      if (runtimeForManifest(distro) === 'qemu') this.addFact(facts, 'Firmware', firmwareKindLabel(distro.firmware ?? 'auto'))
       this.addFact(facts, 'Network', runtimeForManifest(distro) === 'qemu' ? 'Offline' : (distro.networkDevice ?? 'ne2k') + ' / browser fetch')
     }
     const qemuSelected = distro ? runtimeForManifest(distro) === 'qemu' : false
@@ -299,6 +300,7 @@ export class LinuxLabApp {
         kind,
         memoryMiB: Number(data.get('memory') ?? 512),
         runtime: customRuntime(String(data.get('runtime') ?? 'auto')),
+        firmware: customFirmware(String(data.get('firmware') ?? 'auto')),
       })
       this.catalog = [distro, ...this.catalog.filter((item) => item.id !== distro.id)]
       this.selected = distro
@@ -359,6 +361,11 @@ function remoteMediaKind(url: string): MediaKind {
   } catch {
     return 'hda'
   }
+}
+
+function customFirmware(value: string): FirmwareKind {
+  if (value === 'bios' || value === 'uefi' || value === 'auto') return value
+  return 'auto'
 }
 
 function customRuntime(value: string): RuntimeKind {

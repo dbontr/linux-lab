@@ -33,7 +33,7 @@ function safeMediaFile(file, kind) {
   return new File([file], name, { type: file.type, lastModified: file.lastModified })
 }
 
-function bootArguments(file, kind, requestedMemory) {
+function bootArguments(file, kind, requestedMemory, firmware) {
   const memory = Math.max(256, Math.min(1024, Number(requestedMemory) || 512))
   const args = [
     '-m', `${memory}M`,
@@ -47,6 +47,13 @@ function bootArguments(file, kind, requestedMemory) {
     '-monitor', 'none',
     '-nic', 'none',
   ]
+
+  if (firmware === 'uefi') {
+    args.push(
+      '-drive', 'if=pflash,format=raw,unit=0,readonly=on,file=/pack/edk2-x86_64-code.fd',
+      '-drive', 'if=pflash,format=raw,unit=1,file=/pack/edk2-i386-vars.fd',
+    )
+  }
 
   if (kind === 'cdrom') {
     args.push(
@@ -71,7 +78,7 @@ async function boot(request) {
   if (!(request.file instanceof File)) throw new Error('Uploaded boot media is missing')
   const media = safeMediaFile(request.file, request.kind)
   const moduleConfig = {
-    arguments: bootArguments(media, request.kind, request.memoryMiB),
+    arguments: bootArguments(media, request.kind, request.memoryMiB, request.firmware),
     canvas: screen,
     linuxLabMedia: media,
     mainScriptUrlOrBlob: asset('out.js'),
