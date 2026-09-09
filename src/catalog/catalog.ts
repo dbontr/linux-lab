@@ -1,9 +1,12 @@
 import type {
+  Architecture,
   CatalogLoadResult,
   CustomBootRequest,
   DirectLinuxBootDescriptor,
   DistroManifest,
+  DistroMedia,
   MediaKind,
+  RuntimeKind,
 } from './types'
 
 const CATALOG_PATH = 'distros/catalog.json'
@@ -20,11 +23,18 @@ export async function loadCatalog(): Promise<CatalogLoadResult> {
   if (distros.length === 0) throw new Error('Distro catalog is empty')
   return { distros, source }
 }
+
 export function mediaUrl(manifest: DistroManifest): string {
-  if (!manifest.media) throw new Error(`${manifest.name} does not use boot media`)
-  return manifest.media.path.startsWith('http')
-    ? validateRemoteUrl(manifest.media.path)
-    : assetUrl(manifest.media.path)
+  const media = requireMedia(manifest)
+  if ('file' in media) throw new Error(`${manifest.name} uses a local file`)
+  return media.path.startsWith('http')
+    ? validateRemoteUrl(media.path)
+    : assetUrl(media.path)
+}
+
+export function localMediaFile(manifest: DistroManifest): File | null {
+  const media = manifest.media
+  return media && 'file' in media ? media.file : null
 }
 
 export async function loadDirectLinuxBoot(manifest: DistroManifest): Promise<{
@@ -40,29 +50,37 @@ export async function loadDirectLinuxBoot(manifest: DistroManifest): Promise<{
 }
 
 export function createCustomManifest(request: CustomBootRequest): DistroManifest {
-  const name = request.name.trim() || 'Custom Linux'
-  const url = validateRemoteUrl(request.url)
+  const name = request.name.trim() || sourceName(request.source)
   const memoryMiB = clampMemory(request.memoryMiB)
+  const media: DistroMedia = typeof request.source === 'string'
+    ? { kind: request.kind, path: validateRemoteUrl(request.source) }
+    : { kind: request.kind, file: request.source }
+  const identity = typeof request.source === 'string'
+    ? request.source
+    : `${request.source.name}:${request.source.size}:${request.source.lastModified}`
+
   return {
-    id: `custom-${simpleHash(url)}`,
+    id: `custom-${simpleHash(identity)}`,
     name,
     version: 'custom',
-    architecture: 'x86',
-    summary: 'User-supplied x86 boot media. The remote host must allow browser fetches.',
-    media: { kind: request.kind, path: url },
+    architecture: 'auto',
+    runtime: request.runtime ?? 'auto',
+    summary: 'User-supplied PC boot media. Linux Lab selects the compatible browser runtime.',
+    media,
     memoryMiB,
-    vgaMemoryMiB: 8,
+    vgaMemoryMiB: 16,
   }
 }
 
 function validateManifest(value: unknown, index: number): DistroManifest {
   if (!value || typeof value !== 'object') throw new Error(`Distro ${index} is not an object`)
   const entry = value as Record<string, unknown>
-  const architecture = entry.architecture
-  if (architecture !== 'x86') throw new Error(`Distro ${index} has unsupported architecture`)
+  const architecture = validateArchitecture(entry.architecture, index)
   const media = validateMedia(entry.media, index)
   const linux = validateLinux(entry.linux, index)
-  if (Boolean(media) === Boolean(linux)) throw new Error(`Distro ${index} must define exactly one boot source`)
+  if (Boolean(media) === Boolean(linux)) {
+    throw new Error(`Distro ${index} must define exactly one boot source`)
+  }
 
   const result: DistroManifest = {
     id: requiredString(entry.id, `Distro ${index} id`),
@@ -75,12 +93,18 @@ function validateManifest(value: unknown, index: number): DistroManifest {
   }
   if (media) result.media = media
   if (linux) result.linux = linux
-  if (entry.networkDevice === 'ne2k' || entry.networkDevice === 'virtio') result.networkDevice = entry.networkDevice
-  if (entry.homepage !== undefined) result.homepage = validateRemoteUrl(requiredString(entry.homepage, `Distro ${index} homepage`))
+  const runtime = validateRuntime(entry.runtime)
+  if (runtime) result.runtime = runtime
+  if (entry.networkDevice === 'ne2k' || entry.networkDevice === 'virtio') {
+    result.networkDevice = entry.networkDevice
+  }
+  if (entry.homepage !== undefined) {
+    result.homepage = validateRemoteUrl(requiredString(entry.homepage, `Distro ${index} homepage`))
+  }
   return result
 }
 
-function validateMedia(value: unknown, index: number): DistroManifest['media'] | undefined {
+function validateMedia(value: unknown, index: number): DistroManifest['media'] {
   if (value === undefined) return undefined
   if (!value || typeof value !== 'object') throw new Error(`Distro ${index} has invalid media`)
   const media = value as Record<string, unknown>
@@ -89,11 +113,15 @@ function validateMedia(value: unknown, index: number): DistroManifest['media'] |
   return { kind: kind as MediaKind, path: requiredString(media.path, `Distro ${index} media path`) }
 }
 
-function validateLinux(value: unknown, index: number): DistroManifest['linux'] | undefined {
+function validateLinux(value: unknown, index: number): DistroManifest['linux'] {
   if (value === undefined) return undefined
   if (!value || typeof value !== 'object') throw new Error(`Distro ${index} has invalid Linux boot descriptor`)
   const linux = value as Record<string, unknown>
-  return { descriptorPath: validateLocalAssetPath(requiredString(linux.descriptorPath, `Distro ${index} descriptor path`)) }
+  return {
+    descriptorPath: validateLocalAssetPath(
+      requiredString(linux.descriptorPath, `Distro ${index} descriptor path`),
+    ),
+  }
 }
 
 function validateDirectLinuxBoot(value: unknown): DirectLinuxBootDescriptor {
@@ -101,8 +129,12 @@ function validateDirectLinuxBoot(value: unknown): DirectLinuxBootDescriptor {
   const entry = value as Record<string, unknown>
   const fixedChunkSize = requiredInteger(entry.fixedChunkSize, 'Linux boot chunk size')
   const rootfsSize = requiredInteger(entry.rootfsSize, 'Linux root filesystem size')
-  if (fixedChunkSize < 256 || fixedChunkSize % 256 !== 0) throw new Error('Linux boot chunk size must be a multiple of 256 bytes')
-  if (rootfsSize < fixedChunkSize || rootfsSize % fixedChunkSize !== 0) throw new Error('Linux root filesystem size must align to its chunk size')
+  if (fixedChunkSize < 256 || fixedChunkSize % 256 !== 0) {
+    throw new Error('Linux boot chunk size must be a multiple of 256 bytes')
+  }
+  if (rootfsSize < fixedChunkSize || rootfsSize % fixedChunkSize !== 0) {
+    throw new Error('Linux root filesystem size must align to its chunk size')
+  }
   return {
     kernel: validateRelativeAssetName(requiredString(entry.kernel, 'Linux kernel path')),
     initrd: validateRelativeAssetName(requiredString(entry.initrd, 'Linux initramfs path')),
@@ -117,6 +149,7 @@ export function assetUrl(path: string): string {
   const relative = path.replace(/^\/+/, '')
   return new URL(`${import.meta.env.BASE_URL}${relative}`, location.origin).href
 }
+
 export function validateRemoteUrl(value: string): string {
   const url = new URL(value)
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Image URL must use HTTP or HTTPS')
@@ -125,6 +158,17 @@ export function validateRemoteUrl(value: string): string {
   }
   if (url.username || url.password) throw new Error('Image URL must not contain credentials')
   return url.href
+}
+
+function validateArchitecture(value: unknown, index: number): Architecture {
+  if (value === 'x86' || value === 'x86_64') return value
+  throw new Error(`Distro ${index} has unsupported architecture`)
+}
+
+function validateRuntime(value: unknown): RuntimeKind | undefined {
+  if (value === undefined) return undefined
+  if (value === 'v86' || value === 'qemu' || value === 'auto') return value
+  throw new Error('Distro runtime must be v86, qemu, or auto')
 }
 
 function validateLocalAssetPath(value: string): string {
@@ -137,9 +181,27 @@ function validateLocalAssetPath(value: string): string {
 
 function validateRelativeAssetName(value: string): string {
   const normalized = value.replace(/\\/g, '/')
-  if (normalized.includes('/') || normalized === '.' || normalized === '..') throw new Error('Linux boot files must be descriptor-local names')
+  if (normalized.includes('/') || normalized === '.' || normalized === '..') {
+    throw new Error('Linux boot files must be descriptor-local names')
+  }
   return normalized
 }
+
+function requireMedia(manifest: DistroManifest): DistroMedia {
+  if (!manifest.media) throw new Error(`${manifest.name} does not use boot media`)
+  return manifest.media
+}
+
+function sourceName(source: string | File): string {
+  if (typeof source !== 'string') return source.name.replace(/\.(iso|img|raw)$/i, '') || 'Custom Linux'
+  try {
+    const name = new URL(source).pathname.split('/').pop() ?? ''
+    return decodeURIComponent(name).replace(/\.(iso|img|raw)$/i, '') || 'Custom Linux'
+  } catch {
+    return 'Custom Linux'
+  }
+}
+
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} must be a non-empty string`)
   return value.trim()
@@ -165,6 +227,7 @@ function clampMemory(value: number): number {
 function clampVgaMemory(value: number): number {
   return Math.min(64, Math.max(1, Math.round(value)))
 }
+
 function simpleHash(value: string): string {
   let hash = 0x811c9dc5
   for (let index = 0; index < value.length; index += 1) {

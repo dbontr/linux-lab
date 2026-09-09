@@ -12,6 +12,18 @@
     "homepage": "https://alpinelinux.org/"
   },
   {
+    "id": "alpine-3.24.1-x86_64",
+    "name": "Alpine Linux",
+    "version": "3.24.1 64-bit",
+    "architecture": "x86_64",
+    "runtime": "qemu",
+    "summary": "Official 64-bit Alpine virtual ISO for the QEMU-Wasm compatibility runtime.",
+    "media": { "kind": "cdrom", "path": "distros/alpine-virt-3.24.1-x86_64.iso" },
+    "memoryMiB": 512,
+    "vgaMemoryMiB": 16,
+    "homepage": "https://alpinelinux.org/"
+  },
+  {
     "id": "tinycore-11.0-x86",
     "name": "Tiny Core Linux",
     "version": "11.0",

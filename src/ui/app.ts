@@ -1,9 +1,10 @@
 import { createCustomManifest, loadCatalog } from '../catalog/catalog'
-import type { DistroManifest, MediaKind } from '../catalog/types'
+import { detectMediaKind, mediaKindLabel } from '../catalog/mediaProbe'
+import type { DistroManifest, MediaKind, RuntimeKind } from '../catalog/types'
 import { beginOneDriveConnect, disconnectOneDrive, finishOneDriveCallback, getOneDriveSession } from '../onedrive/auth'
 import { OneDriveFilesystem } from '../onedrive/graph'
 import { OneDrive9PServer } from '../onedrive/p9Server'
-import { LinuxRuntime, type RuntimeStatus } from '../runtime/v86Runtime'
+import { LinuxRuntime, runtimeForManifest, type RuntimeStatus } from '../runtime/linuxRuntime'
 
 const MOUNT_COMMAND = 'mkdir -p /mnt/onedrive && mount -t 9p -o trans=virtio,version=9p2000.L,msize=262144,access=any host9p /mnt/onedrive'
 
@@ -74,7 +75,7 @@ export class LinuxLabApp {
           </main>
           <aside class="details-panel" aria-label="Session details">
             <section><span class="eyebrow">Distribution</span><h2 data-detail-name>None selected</h2><p class="muted" data-detail-summary></p><dl class="facts" data-facts></dl></section>
-            <section class="storage-section"><span class="eyebrow">Persistent storage</span><div class="storage-status"><span class="status-dot" data-storage-dot></span><strong data-storage-label>OneDrive disconnected</strong></div><p class="muted">When connected before boot, OneDrive is exposed to Linux as the <code>host9p</code> virtio filesystem.</p><div class="mount-tools" data-mount-tools hidden><code>${escapeHtml(MOUNT_COMMAND)}</code><div class="mount-actions"><button class="button" type="button" data-copy-mount>Copy command</button><button class="button" type="button" data-send-mount disabled>Send to VM</button></div></div></section>
+            <section class="storage-section"><span class="eyebrow">Persistent storage</span><div class="storage-status"><span class="status-dot" data-storage-dot></span><strong data-storage-label>OneDrive disconnected</strong></div><p class="muted" data-storage-help>When connected before boot, OneDrive is exposed to compatible guests as the <code>host9p</code> virtio filesystem.</p><div class="mount-tools" data-mount-tools hidden><code>${escapeHtml(MOUNT_COMMAND)}</code><div class="mount-actions"><button class="button" type="button" data-copy-mount>Copy command</button><button class="button" type="button" data-send-mount disabled>Send to VM</button></div></div></section>
             <section><span class="eyebrow">Session model</span><p class="muted">The Linux machine is disposable. Refresh or power it off for a clean start. OneDrive data remains independent of the guest.</p></section>
           </aside>
         </div>
@@ -82,12 +83,15 @@ export class LinuxLabApp {
       </div>
       <dialog class="custom-dialog" data-custom-dialog>
         <form method="dialog" data-custom-form>
-          <div class="dialog-heading"><div><span class="eyebrow">Custom media</span><h2>Boot an x86 image</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Close">×</button></div>
-          <label>Display name<input name="name" value="Custom Linux" required /></label>
-          <label>ISO or IMG URL<input name="url" type="url" placeholder="https://example.org/linux.iso" required /></label>
-          <div class="form-row"><label>Media<select name="kind"><option value="cdrom">CD / ISO</option><option value="hda">Hard disk / IMG</option></select></label><label>Memory<select name="memory"><option>128</option><option>256</option><option selected>512</option><option>1024</option><option>2048</option></select></label></div>
-          <p class="muted">The image must support 32-bit x86 and allow cross-origin browser downloads.</p>
-          <div class="dialog-actions"><button class="button" value="cancel" formnovalidate>Cancel</button><button class="button primary" value="default" data-custom-submit>Use image</button></div>
+          <div class="dialog-heading"><div><span class="eyebrow">Custom media</span><h2>Boot an ISO or IMG</h2></div><button class="icon-button" value="cancel" formnovalidate aria-label="Close">&times;</button></div>
+          <label>Display name<input name="name" placeholder="Use image name" /></label>
+          <label class="file-source">Upload ISO or IMG<input name="file" type="file" accept=".iso,.img,.raw,application/x-iso9660-image,application/octet-stream" /></label>
+          <div class="source-separator"><span>or use a URL</span></div>
+          <label>Remote ISO or IMG URL<input name="url" type="url" placeholder="https://example.org/linux.iso" /></label>
+          <div class="form-row"><label>Media<select name="kind"><option value="auto" selected>Auto detect</option><option value="cdrom">ISO / optical disc</option><option value="hda">IMG / hard disk</option></select></label><label>Memory<select name="memory"><option>256</option><option selected>512</option><option>768</option><option>1024</option></select></label></div>
+          <label>Runtime<select name="runtime"><option value="auto" selected>Auto - 32/64-bit</option><option value="qemu">QEMU - x86-64 compatible</option><option value="v86">v86 - legacy 32-bit</option></select></label>
+          <p class="muted">Local uploads stay on this device. Auto selects the browser runtime and detects ISO versus disk media.</p>
+          <div class="dialog-actions"><button class="button" value="cancel" formnovalidate>Cancel</button><button class="button primary" value="default" data-custom-submit>Boot image</button></div>
         </form>
       </dialog>`
     this.bindShell()
@@ -96,7 +100,7 @@ export class LinuxLabApp {
   private bindShell(): void {
     this.query<HTMLInputElement>('[data-search]').addEventListener('input', () => this.renderCatalog())
     this.query<HTMLButtonElement>('[data-custom]').addEventListener('click', () => this.query<HTMLDialogElement>('[data-custom-dialog]').showModal())
-    this.query<HTMLFormElement>('[data-custom-form]').addEventListener('submit', (event) => this.submitCustom(event))
+    this.query<HTMLFormElement>('[data-custom-form]').addEventListener('submit', (event) => void this.submitCustom(event))
     this.query<HTMLButtonElement>('[data-boot]').addEventListener('click', () => void this.bootSelected())
     this.query<HTMLButtonElement>('[data-pause]').addEventListener('click', () => void this.togglePause())
     this.query<HTMLButtonElement>('[data-restart]').addEventListener('click', () => this.runtime?.restart())
@@ -137,7 +141,7 @@ export class LinuxLabApp {
       identity.append(name, version)
       const arch = document.createElement('span')
       arch.className = 'arch-pill'
-      arch.textContent = distro.architecture
+      arch.textContent = architectureLabel(distro)
       button.append(identity, arch)
       button.addEventListener('click', () => this.selectDistro(distro))
       list.append(button)
@@ -160,17 +164,23 @@ export class LinuxLabApp {
     const distro = this.selected
     this.query<HTMLElement>('[data-session-name]').textContent = distro?.name ?? 'Select a distro'
     this.query<HTMLElement>('[data-session-version]').textContent = distro ? distro.version : ''
-    this.query<HTMLElement>('[data-session-arch]').textContent = distro?.architecture ?? 'x86'
+    this.query<HTMLElement>('[data-session-arch]').textContent = distro ? architectureLabel(distro) : 'PC'
     this.query<HTMLElement>('[data-detail-name]').textContent = distro?.name ?? 'None selected'
     this.query<HTMLElement>('[data-detail-summary]').textContent = distro?.summary ?? ''
     const facts = this.query<HTMLElement>('[data-facts]')
     facts.replaceChildren()
     if (distro) {
-      this.addFact(facts, 'Architecture', distro.architecture)
+      this.addFact(facts, 'Architecture', architectureLabel(distro))
       this.addFact(facts, 'Memory', `${distro.memoryMiB} MiB`)
-      this.addFact(facts, 'Boot source', distro.linux ? 'Fast direct Linux image' : distro.media?.kind === 'cdrom' ? 'CD / ISO' : 'Hard disk image')
-      this.addFact(facts, 'Network', `${distro.networkDevice ?? 'ne2k'} · browser fetch`)
+      this.addFact(facts, 'Boot source', distro.linux ? 'Prepared Linux image' : distro.media ? mediaKindLabel(distro.media.kind) : 'Unknown')
+      this.addFact(facts, 'Runtime', runtimeLabel(distro))
+      this.addFact(facts, 'Network', runtimeForManifest(distro) === 'qemu' ? 'Offline' : (distro.networkDevice ?? 'ne2k') + ' / browser fetch')
     }
+    const qemuSelected = distro ? runtimeForManifest(distro) === 'qemu' : false
+    this.query<HTMLElement>('[data-storage-help]').textContent = qemuSelected
+      ? 'OneDrive host mounting is available in v86 guests. The QEMU filesystem bridge is not active yet.'
+      : 'When connected before boot, OneDrive is exposed to Linux as the host9p virtio filesystem.'
+    this.updateOneDriveUI()
     this.query<HTMLButtonElement>('[data-boot]').disabled = !distro
   }
 
@@ -204,14 +214,14 @@ export class LinuxLabApp {
     fill.style.width = status.progress === undefined ? '18%' : `${Math.max(0, Math.min(1, status.progress)) * 100}%`
     fill.classList.toggle('indeterminate', loading && status.progress === undefined)
     const active = status.phase === 'running' || status.phase === 'stopped'
-    this.query<HTMLButtonElement>('[data-pause]').disabled = !active
+    const qemu = status.runtime === 'qemu'
+    this.query<HTMLButtonElement>('[data-pause]').disabled = !active || qemu
     this.query<HTMLButtonElement>('[data-restart]').disabled = !active
     this.query<HTMLButtonElement>('[data-fullscreen]').disabled = !active
-    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !active
+    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !active || qemu
     this.query<HTMLButtonElement>('[data-pause]').textContent = status.phase === 'stopped' ? 'Resume' : 'Pause'
     if (status.phase === 'error') this.setNotice(status.message, 'error')
   }
-
   private async toggleOneDrive(): Promise<void> {
     try {
       if (this.oneDriveConnected) {
@@ -234,13 +244,13 @@ export class LinuxLabApp {
     const label = this.query<HTMLElement>('[data-storage-label]')
     const dot = this.query<HTMLElement>('[data-storage-dot]')
     const tools = this.query<HTMLElement>('[data-mount-tools]')
+    const qemu = this.selected ? runtimeForManifest(this.selected) === 'qemu' : false
     button.textContent = this.oneDriveConnected ? 'Disconnect OneDrive' : 'Connect OneDrive'
     label.textContent = this.oneDriveConnected ? 'OneDrive connected' : 'OneDrive disconnected'
     dot.classList.toggle('connected', this.oneDriveConnected)
-    tools.hidden = !this.oneDriveConnected
-    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !this.runtime?.active
+    tools.hidden = !this.oneDriveConnected || qemu
+    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !this.runtime?.active || qemu
   }
-
   private async copyMountCommand(): Promise<void> {
     try {
       await navigator.clipboard.writeText(MOUNT_COMMAND)
@@ -259,28 +269,47 @@ export class LinuxLabApp {
     }
   }
 
-  private submitCustom(event: SubmitEvent): void {
+  private async submitCustom(event: SubmitEvent): Promise<void> {
     event.preventDefault()
     const form = event.currentTarget as HTMLFormElement
     if (!form.reportValidity()) return
     const data = new FormData(form)
+    const fileInput = form.elements.namedItem('file') as HTMLInputElement
+    const urlInput = form.elements.namedItem('url') as HTMLInputElement
+    const file = fileInput.files?.[0] ?? null
+    const url = urlInput.value.trim()
+    if (!file && !url) {
+      urlInput.setCustomValidity('Choose an ISO or IMG file, or enter a URL.')
+      urlInput.reportValidity()
+      urlInput.setCustomValidity('')
+      return
+    }
+
     try {
+      const requestedKind = String(data.get('kind') ?? 'auto')
+      const kind = requestedKind === 'cdrom' || requestedKind === 'hda'
+        ? requestedKind
+        : file
+          ? await detectMediaKind(file)
+          : remoteMediaKind(url)
+      const source = file ?? url
       const distro = createCustomManifest({
         name: String(data.get('name') ?? ''),
-        url: String(data.get('url') ?? ''),
-        kind: String(data.get('kind') ?? 'cdrom') as MediaKind,
+        source,
+        kind,
         memoryMiB: Number(data.get('memory') ?? 512),
+        runtime: customRuntime(String(data.get('runtime') ?? 'auto')),
       })
       this.catalog = [distro, ...this.catalog.filter((item) => item.id !== distro.id)]
       this.selected = distro
       this.query<HTMLDialogElement>('[data-custom-dialog]').close()
+      form.reset()
       this.renderCatalog()
       this.renderSelection()
     } catch (error) {
       this.setNotice(errorMessage(error), 'error')
     }
   }
-
   private addFact(list: HTMLElement, label: string, value: string): void {
     const term = document.createElement('dt')
     const detail = document.createElement('dd')
@@ -312,4 +341,27 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[character] ?? character)
+}
+
+function architectureLabel(distro: DistroManifest): string {
+  if (distro.architecture === 'x86_64') return 'x86-64'
+  if (distro.architecture === 'auto') return 'x86 / x86-64'
+  return 'x86'
+}
+
+function runtimeLabel(distro: DistroManifest): string {
+  return runtimeForManifest(distro) === 'qemu' ? 'QEMU-Wasm' : 'v86'
+}
+
+function remoteMediaKind(url: string): MediaKind {
+  try {
+    return new URL(url).pathname.toLocaleLowerCase().endsWith('.iso') ? 'cdrom' : 'hda'
+  } catch {
+    return 'hda'
+  }
+}
+
+function customRuntime(value: string): RuntimeKind {
+  if (value === 'qemu' || value === 'v86' || value === 'auto') return value
+  return 'auto'
 }

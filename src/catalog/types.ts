@@ -1,9 +1,18 @@
 export type MediaKind = 'cdrom' | 'hda'
+export type Architecture = 'x86' | 'x86_64' | 'auto'
+export type RuntimeKind = 'v86' | 'qemu' | 'auto'
 
-export interface DistroMedia {
+export interface RemoteDistroMedia {
   kind: MediaKind
   path: string
 }
+
+export interface LocalDistroMedia {
+  kind: MediaKind
+  file: File
+}
+
+export type DistroMedia = RemoteDistroMedia | LocalDistroMedia
 
 export interface DirectLinuxBoot {
   descriptorPath: string
@@ -22,7 +31,8 @@ export interface DistroManifest {
   id: string
   name: string
   version: string
-  architecture: 'x86'
+  architecture: Architecture
+  runtime?: RuntimeKind
   summary: string
   media?: DistroMedia
   linux?: DirectLinuxBoot
@@ -34,9 +44,10 @@ export interface DistroManifest {
 
 export interface CustomBootRequest {
   name: string
-  url: string
+  source: string | File
   kind: MediaKind
   memoryMiB: number
+  runtime?: RuntimeKind
 }
 
 export interface CatalogLoadResult {

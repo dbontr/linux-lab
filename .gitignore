@@ -3,11 +3,13 @@ node_modules/
 dist/
 *.local
 
-# Generated boot artifacts. GitHub Actions downloads and verifies these.
+# Generated boot/runtime artifacts.
 public/distros/*.iso
 public/distros/*.img
 public/distros/alpine-v86/
 public/v86/*.bin
+public/qemu/
+public/coi-serviceworker.js
 !public/distros/catalog.json
 
 # Logs

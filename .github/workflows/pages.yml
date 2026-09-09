@@ -28,6 +28,15 @@ jobs:
         run: npm run sync:distros
       - name: Build Alpine browser image
         run: sudo bash distro-build/alpine/build.sh
+      - name: Restore x86-64 QEMU runtime
+        id: qemu-cache
+        uses: actions/cache@v4
+        with:
+          path: public/qemu
+          key: qemu-wasm-${{ runner.os }}-${{ hashFiles('runtime-build/qemu/**') }}
+      - name: Build x86-64 QEMU runtime
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
+        run: bash runtime-build/qemu/build.sh
       - run: npm test
       - run: npm run build
       - uses: actions/configure-pages@v5

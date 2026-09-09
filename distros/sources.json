@@ -16,5 +16,17 @@
     "url": "https://i.copy.sh/TinyCore-11.0.iso",
     "sha256": "778fc3788d9df3de72970827968b2b195aca827401db6f6f9cbdb737d4300bda",
     "output": "public/distros/TinyCore-11.0.iso"
+  },
+  {
+    "id": "alpine-3.24.1-x86_64",
+    "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-virt-3.24.1-x86_64.iso",
+    "sha256": "e73a6241bd5f3c5c2d4d38c02cc52c378c0415a7c888bd292066bf36e0f41a39",
+    "output": "public/distros/alpine-virt-3.24.1-x86_64.iso"
+  },
+  {
+    "id": "coi-serviceworker-0.1.7",
+    "url": "https://raw.githubusercontent.com/gzuidhof/coi-serviceworker/7b1d2a092d0d2dd2b7270b6f12f13605de26f214/coi-serviceworker.min.js",
+    "sha256": "166cb9395cd1f7e5790f22eefa2b3b966cc0fa7215f18174453fecbd6f3cab5d",
+    "output": "public/coi-serviceworker.js"
   }
 ]

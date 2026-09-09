@@ -18,4 +18,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: bash -n distro-build/alpine/build.sh
+      - run: bash -n runtime-build/qemu/build.sh
       - run: npm run check

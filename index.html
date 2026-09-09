@@ -8,6 +8,11 @@
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>Linux Lab</title>
+    <script>
+      const coi = document.createElement('script')
+      coi.src = new URL('./coi-serviceworker.js', location.href).href
+      document.head.append(coi)
+    </script>
   </head>
   <body>
     <div id="app"></div>
