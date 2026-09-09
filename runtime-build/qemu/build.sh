@@ -29,7 +29,7 @@ node "$SCRIPT_DIR/patch-upstream.mjs" "$SOURCE_DIR/Dockerfile"
 docker build -t "$IMAGE_NAME" -f "$SOURCE_DIR/Dockerfile" "$SOURCE_DIR"
 docker run --rm -d \
   --name "$CONTAINER_NAME" \
-  -v "$SOURCE_DIR:/qemu:ro" \
+  -v "$SOURCE_DIR:/qemu" \
   -v "$SCRIPT_DIR:/linux-lab-runtime:ro" \
   "$IMAGE_NAME"
 
