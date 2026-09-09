@@ -37,7 +37,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 ## Distribution and build artifacts
 
 - [Alpine Linux downloads](https://dl-cdn.alpinelinux.org/alpine/) — official x86 minirootfs and x86-64 virtual ISO used by the verified catalog fixtures.
-- [zlib fossil archive](https://zlib.net/fossils/) — immutable zlib 1.3.1 source used to repair the pinned QEMU-Wasm build dependency; SHA-256 is verified before extraction.
+- [zlib 1.3.1 release commit](https://github.com/madler/zlib/commit/51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf) - pinned QEMU-Wasm build input; the codeload archive is SHA-256 verified before extraction.
 - [v86 test images](https://i.copy.sh/) — upstream v86-compatible Tiny Core image used by the catalog.
 - [Tiny Core Linux](https://tinycorelinux.net/) — Tiny Core project homepage and distribution information.
 
