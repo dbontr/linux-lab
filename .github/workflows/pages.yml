@@ -39,6 +39,8 @@ jobs:
       - name: Build x86-64 QEMU runtime
         if: steps.qemu-cache.outputs.cache-hit != 'true'
         run: bash runtime-build/qemu/build.sh
+      - name: Verify x86-64 QEMU runtime
+        run: (cd public/qemu && sha256sum -c SHA256SUMS)
       - run: npm test
       - run: npm run build
       - uses: actions/configure-pages@v5
