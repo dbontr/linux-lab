@@ -7,6 +7,7 @@
 #include "sysemu/runstate.h"
 #include "ui/input.h"
 
+#include <emscripten/atomic.h>
 #include <emscripten/emscripten.h>
 
 #define LINUXLAB_TEXT_CAPACITY 4096
@@ -46,18 +47,22 @@ void linuxlab_runtime_ready(void)
 
 bool linuxlab_pause_requested(void)
 {
-    return qatomic_read(&linuxlab_paused) != 0;
+    return qatomic_load_acquire(&linuxlab_paused) != 0;
 }
 
-void linuxlab_vcpu_pause_point(void)
+void linuxlab_vcpu_pause_wait(void)
 {
     if (!linuxlab_pause_requested()) {
         return;
     }
 
     qatomic_inc(&linuxlab_pause_waiters);
-    while (qatomic_read(&linuxlab_paused)) {
-        emscripten_sleep(1);
+    while (linuxlab_pause_requested()) {
+        emscripten_atomic_wait_u32(
+            &linuxlab_paused,
+            1,
+            ATOMICS_WAIT_DURATION_INFINITE
+        );
     }
     qatomic_dec(&linuxlab_pause_waiters);
 }
@@ -65,7 +70,7 @@ void linuxlab_vcpu_pause_point(void)
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 {
     return qatomic_read(&linuxlab_ready) && runstate_is_running()
-        && !qatomic_read(&linuxlab_paused);
+        && !linuxlab_pause_requested();
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
@@ -76,7 +81,7 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
     if (!runstate_is_running()) {
         return 0;
     }
-    if (!qatomic_read(&linuxlab_paused)) {
+    if (!linuxlab_pause_requested()) {
         return qatomic_read(&linuxlab_pause_waiters) == 0;
     }
 
@@ -85,27 +90,28 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
             running++;
         }
     }
-    return running > qatomic_read(&linuxlab_pause_waiters);
+    return running > 0;
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
     (void)opaque;
-    if (!runstate_is_running() || qatomic_read(&linuxlab_paused)) {
+    if (!runstate_is_running() || linuxlab_pause_requested()) {
         return;
     }
 
-    qatomic_set(&linuxlab_paused, 1);
+    qatomic_store_release(&linuxlab_paused, 1);
 }
 
 static void linuxlab_resume_bh(void *opaque)
 {
     (void)opaque;
-    if (!runstate_is_running() || !qatomic_read(&linuxlab_paused)) {
+    if (!runstate_is_running() || !linuxlab_pause_requested()) {
         return;
     }
 
-    qatomic_set(&linuxlab_paused, 0);
+    qatomic_store_release(&linuxlab_paused, 0);
+    emscripten_atomic_notify(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {
