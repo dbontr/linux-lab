@@ -14,6 +14,7 @@ typedef struct LinuxLabTextRequest {
 } LinuxLabTextRequest;
 
 static int linuxlab_ready;
+static int linuxlab_paused;
 
 void linuxlab_runtime_prepare(void)
 {
@@ -24,32 +25,36 @@ void linuxlab_runtime_prepare(void)
 
 void linuxlab_runtime_ready(void)
 {
+    qatomic_set(&linuxlab_paused, 0);
     qatomic_set(&linuxlab_ready, 1);
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 {
-    return qatomic_read(&linuxlab_ready) && runstate_is_running();
+    return qatomic_read(&linuxlab_ready) && runstate_is_running()
+        && !qatomic_read(&linuxlab_paused);
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
-    return runstate_is_running() ? 1 : 0;
+    return runstate_is_running() && !qatomic_read(&linuxlab_paused) ? 1 : 0;
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
     (void)opaque;
-    if (runstate_is_running()) {
-        vm_stop(RUN_STATE_PAUSED);
+    if (runstate_is_running() && !qatomic_read(&linuxlab_paused)) {
+        pause_all_vcpus();
+        qatomic_set(&linuxlab_paused, 1);
     }
 }
 
 static void linuxlab_resume_bh(void *opaque)
 {
     (void)opaque;
-    if (runstate_check(RUN_STATE_PAUSED)) {
-        vm_start();
+    if (runstate_is_running() && qatomic_read(&linuxlab_paused)) {
+        resume_all_vcpus();
+        qatomic_set(&linuxlab_paused, 0);
     }
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)

@@ -4,6 +4,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.meta.url), 'utf8')
+const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 
 function loadHost() {
   const screen = { focus() {} }
@@ -149,4 +150,11 @@ test('OneDrive token channel rejects oversized-token failures', () => {
   const context = loadHost()
   context.tokenModule = { ccall: () => -1 }
   assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
+})
+
+test('QEMU browser pause suspends vCPUs without a global VM stop transition', () => {
+  assert.match(controlSource, /pause_all_vcpus\(\)/)
+  assert.match(controlSource, /resume_all_vcpus\(\)/)
+  assert.doesNotMatch(controlSource, /vm_stop\(/)
+  assert.doesNotMatch(controlSource, /vm_start\(/)
 })
