@@ -2,6 +2,7 @@
 set -euo pipefail
 
 QEMU_COMMIT="0ef7b4e2814b231705d8371dd7997f5b72e70baf"
+SDL_COMMIT="55b03c7493a7abed33cf803d1380a40fa8af903f"
 C2W_NET_VERSION="v0.5.0"
 C2W_NET_SHA256="b01b09c3a60444c3ebaca9ef60a63b7581ebea5a00c6b7844eded719c98b5aa1"
 C2W_NET_LICENSE_SHA256="cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
@@ -12,6 +13,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="${1:-$REPO_ROOT/public/qemu}"
 WORK_DIR="${LINUX_LAB_QEMU_BUILD_DIR:-/tmp/linux-lab-qemu-wasm}"
 SOURCE_DIR="$WORK_DIR/source"
+SDL_SOURCE_DIR="$WORK_DIR/sdl2"
 PACK_DIR="$WORK_DIR/pack"
 NETWORK_SOURCE_DIR="$SOURCE_DIR/examples/networking/htdocs"
 NETWORK_TOOL_DIR="$SCRIPT_DIR/network"
@@ -38,7 +40,13 @@ cp "$SCRIPT_DIR/linuxlab-onedrive.c" "$SOURCE_DIR/hw/9pfs/linuxlab-onedrive.c"
 node "$SCRIPT_DIR/patch-onedrive.mjs" "$SOURCE_DIR/hw/9pfs/meson.build"
 cp "$SCRIPT_DIR/linuxlab-control.c" "$SOURCE_DIR/system/linuxlab-control.c"
 node "$SCRIPT_DIR/patch-control.mjs" "$SOURCE_DIR/system/meson.build" "$SOURCE_DIR/system/main.c"
-node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c" "$SOURCE_DIR/ui/sdl2-2d.c"
+node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c"
+
+git clone --filter=blob:none --no-checkout https://github.com/libsdl-org/SDL.git "$SDL_SOURCE_DIR"
+git -C "$SDL_SOURCE_DIR" checkout --detach "$SDL_COMMIT"
+test "$(git -C "$SDL_SOURCE_DIR" rev-parse HEAD)" = "$SDL_COMMIT"
+node "$SCRIPT_DIR/patch-sdl-framebuffer.mjs" "$SDL_SOURCE_DIR/src/video/emscripten/SDL_emscriptenframebuffer.c"
+rm -rf "$SDL_SOURCE_DIR/.git"
 
 mkdir -p "$NETWORK_WORK_DIR" "$NETWORK_OUTPUT_DIR"
 cp "$NETWORK_SOURCE_DIR/stack.js" "$NETWORK_WORK_DIR/stack.js"
@@ -67,11 +75,13 @@ EOF
 docker build -t "$IMAGE_NAME" -f "$SOURCE_DIR/Dockerfile" "$SOURCE_DIR"
 docker run --rm -d \
   --name "$CONTAINER_NAME" \
+  -e EMCC_LOCAL_PORTS="sdl2=/linux-lab-sdl2" \
   -v "$SOURCE_DIR:/qemu" \
   -v "$SCRIPT_DIR:/linux-lab-runtime:ro" \
+  -v "$SDL_SOURCE_DIR:/linux-lab-sdl2:ro" \
   "$IMAGE_NAME"
 
-docker exec "$CONTAINER_NAME" embuilder build sdl2-mt
+docker exec "$CONTAINER_NAME" embuilder --force build sdl2-mt
 
 COMMON_FLAGS="-O3 -g0 -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -pthread -sUSE_SDL=2 -sASYNCIFY=1 -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js"
 LINK_FLAGS="--pre-js /linux-lab-runtime/pre.js -sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS,ccall"
@@ -129,10 +139,12 @@ docker cp "$CONTAINER_NAME:/build/qemu-system-x86_64.worker.js" "$OUTPUT_DIR/qem
 docker cp "$CONTAINER_NAME:/build/qemu-system-x86_64.data" "$OUTPUT_DIR/qemu-system-x86_64.data"
 docker cp "$CONTAINER_NAME:/build/load.js" "$OUTPUT_DIR/load.js"
 cp "$SOURCE_DIR/COPYING" "$OUTPUT_DIR/COPYING.qemu"
+cp "$SDL_SOURCE_DIR/LICENSE.txt" "$OUTPUT_DIR/LICENSE.sdl"
 
 cat > "$OUTPUT_DIR/runtime.json" <<EOF
 {
   "qemuCommit": "$QEMU_COMMIT",
+  "sdlCommit": "$SDL_COMMIT",
   "architecture": "x86_64",
   "display": "sdl2",
   "localMedia": "browser-blob-range",
@@ -157,6 +169,8 @@ EOF
     network/LICENSE.apache-2.0 \
     network/THIRD_PARTY_LICENSES.txt \
     network/NOTICE.txt \
+    COPYING.qemu \
+    LICENSE.sdl \
     runtime.json > SHA256SUMS
 )
 

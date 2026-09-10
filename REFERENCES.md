@@ -14,7 +14,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 
 ## Browser runtime support
 
-- [SDL 2.24.2 Emscripten framebuffer](https://github.com/libsdl-org/SDL/blob/release-2.24.2/src/video/emscripten/SDL_emscriptenframebuffer.c) — software-renderer framebuffer path used by QEMU's `gl=off` display; browser presentation is performed with Canvas 2D on the main thread.
+- [SDL 2.24.2 Emscripten framebuffer](https://github.com/libsdl-org/SDL/blob/55b03c7493a7abed33cf803d1380a40fa8af903f/src/video/emscripten/SDL_emscriptenframebuffer.c) — pinned software-renderer framebuffer source used by QEMU's `gl=off` display; Linux Lab treats zero-area frames as no-op presentation and Canvas 2D presents valid frames on the main thread.
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
 - [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread and WebAssembly runtime settings used by the QEMU browser build.

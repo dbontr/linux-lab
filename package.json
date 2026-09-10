@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run && node --test runtime-build/qemu/*.node.mjs",
-    "check:runtime": "node --check public/runtime/qemu-host.js && node --check runtime-build/qemu/pre.js && node --check runtime-build/qemu/patch-networking.mjs && node --check runtime-build/qemu/package-network-licenses.mjs && node --check runtime-build/qemu/patch-browser-media.mjs && node --check runtime-build/qemu/patch-onedrive.mjs && node --check runtime-build/qemu/patch-control.mjs && node --check runtime-build/qemu/patch-sdl-software.mjs && node --check runtime-build/qemu/network/bundle.mjs",
+    "check:runtime": "node --check public/runtime/qemu-host.js && node --check runtime-build/qemu/pre.js && node --check runtime-build/qemu/patch-networking.mjs && node --check runtime-build/qemu/package-network-licenses.mjs && node --check runtime-build/qemu/patch-browser-media.mjs && node --check runtime-build/qemu/patch-onedrive.mjs && node --check runtime-build/qemu/patch-control.mjs && node --check runtime-build/qemu/patch-sdl-software.mjs && node --check runtime-build/qemu/patch-sdl-framebuffer.mjs && node --check runtime-build/qemu/network/bundle.mjs",
     "check": "npm run check:runtime && npm run test && npm run build",
     "sync:distros": "node scripts/sync-distros.mjs",
     "verify:media": "node scripts/verify-built-media.mjs",

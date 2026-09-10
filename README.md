@@ -94,7 +94,7 @@ npm run build
 npm run preview
 ```
 
-The QEMU builder requires Git, Docker, Node.js/npm, `curl`, `gzip`, `sha256sum`, and `bzip2`. It checks out a pinned `qemu-wasm` commit, verifies its repaired zlib input, builds `x86_64-softmmu` with Emscripten pthreads and SDL2, packages PC BIOS/UEFI firmware, and emits checksums for generated runtime assets.
+The QEMU builder requires Git, Docker, Node.js/npm, `curl`, `gzip`, `sha256sum`, and `bzip2`. It checks out pinned `qemu-wasm` and SDL 2.24.2 commits, applies the browser display/runtime patches, verifies the repaired zlib input, builds `x86_64-softmmu` with Emscripten pthreads and SDL2, packages PC BIOS/UEFI firmware, and emits checksums for generated runtime assets.
 
 Generated VM images and QEMU binaries are ignored by Git and rebuilt or restored from the GitHub Actions cache during deployment.
 
