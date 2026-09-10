@@ -409,11 +409,22 @@ Module['linuxLabOneDriveBridge'] = (function () {
       var remote = normalize(path);
       var length = Math.trunc(size);
       if (length < 0 || !Number.isSafeInteger(length)) throw failure(400, 'Invalid OneDrive file size');
-      var current = loadDirty(remote);
+      var item = getItem(remote, false);
+      if (item.directory) throw failure(400, 'Cannot truncate a OneDrive directory');
+      var current = dirty.get(remote);
+      if (!current) {
+        var preserved = Math.min(item.size, length);
+        if (preserved > 0) {
+          var response = download(remote, 'bytes=0-' + (preserved - 1));
+          current = response.bytes;
+          if (current.byteLength > preserved) current = current.subarray(0, preserved);
+        } else {
+          current = new Uint8Array(0);
+        }
+      }
       var next = new Uint8Array(length);
       next.set(current.subarray(0, Math.min(current.byteLength, length)));
       dirty.set(remote, next);
-      var item = getItem(remote, false);
       item.size = length;
       item.modifiedAt = Date.now();
       item.expiresAt = Date.now() + META_TTL_MS;

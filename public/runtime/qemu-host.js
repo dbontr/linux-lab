@@ -149,6 +149,15 @@ async function boot(request) {
 
   const networkEnabled = networkCertificate !== null
   const storageEnabled = typeof request.oneDriveToken === 'string' && request.oneDriveToken.length > 0
+  let startupReported = false
+  const reportStartupError = (error) => {
+    if (startupReported) return
+    startupReported = true
+    releaseMediaUrl()
+    const message = error instanceof Error ? error.message : String(error)
+    appendLog(message)
+    post('error', { message })
+  }
   const moduleConfig = {
     arguments: bootArguments(mediaSource, request.kind, request.memoryMiB, request.firmware, networkEnabled, storageEnabled),
     canvas: screen,
@@ -158,11 +167,18 @@ async function boot(request) {
     locateFile: (name) => asset(name),
     print: appendLog,
     printErr: appendLog,
-    onRuntimeInitialized: () => appendLog('QEMU WebAssembly runtime initialized.'),
-    onAbort: (reason) => {
-      releaseMediaUrl()
-      post('error', { message: `QEMU aborted: ${String(reason)}` })
+    onRuntimeInitialized: () => {
+      appendLog('QEMU WebAssembly runtime initialized.')
+      qemuModule = moduleConfig
+      void waitForQemuReady(moduleConfig).then(() => {
+        if (startupReported) return
+        startupReported = true
+        log.hidden = true
+        screen.focus()
+        post('running', { network: networkEnabled, storage: storageEnabled })
+      }).catch(reportStartupError)
     },
+    onAbort: (reason) => reportStartupError(new Error(`QEMU aborted: ${String(reason)}`)),
   }
   if (networkEnabled) moduleConfig.websocket = { url: NETWORK_ADDRESS }
 
@@ -171,11 +187,9 @@ async function boot(request) {
   const factoryModule = await import(asset('out.js'))
   const createQemu = factoryModule.default
   if (typeof createQemu !== 'function') throw new Error('QEMU runtime module is invalid')
-  qemuModule = await createQemu(window.Module)
-  await waitForQemuReady(qemuModule)
-  log.hidden = true
-  screen.focus()
-  post('running', { network: networkEnabled, storage: storageEnabled })
+  void Promise.resolve(createQemu(window.Module)).then((module) => {
+    qemuModule = module
+  }).catch(reportStartupError)
 }
 
 async function waitForQemuReady(module) {

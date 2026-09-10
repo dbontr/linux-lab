@@ -117,7 +117,16 @@ function browserExecutable() {
 }
 
 async function waitForStatus(page, pattern, timeout = 60_000) {
-  await page.locator('[data-status]').filter({ hasText: pattern }).waitFor({ timeout })
+  try {
+    await page.locator('[data-status]').filter({ hasText: pattern }).waitFor({ timeout })
+  } catch (error) {
+    const status = await page.locator('[data-status]').textContent().catch(() => null)
+    const notice = await page.locator('[data-notice]').textContent().catch(() => null)
+    const frame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
+    const qemuLog = frame ? await frame.locator('#log').textContent().catch(() => null) : null
+    console.error('Linux Lab browser smoke diagnostics:', { status, notice, qemuLog })
+    throw error
+  }
 }
 
 async function seedOneDriveSession(page) {
@@ -149,12 +158,13 @@ async function seedOneDriveSession(page) {
   })
 }
 
-async function smokeV86(page) {
+async function smokeV86(page, pageErrors) {
   await page.locator('.distro-card').nth(0).click()
   await page.locator('[data-boot]').click()
   await waitForStatus(page, 'is running', 30_000)
   const runtime = await page.locator('[data-facts] dd').nth(3).textContent()
   assert.equal(runtime, 'v86')
+  assert.deepEqual(pageErrors.map((error) => error.message), [], 'prepared Alpine emitted a page error')
 
   await page.locator('.distro-card').nth(2).click()
   await page.locator('[data-boot]').click()
@@ -179,6 +189,17 @@ async function smokeQemu(page) {
 
   await page.locator('[data-send-mount]').click()
   await page.locator('[data-notice]').filter({ hasText: 'Mount command sent' }).waitFor({ timeout: 10_000 })
+
+  await page.locator('[data-custom]').click()
+  await page.locator('[data-custom-dialog] input[name=file]').setInputFiles(resolve(repoRoot, 'public', 'distros', 'TinyCore-11.0.iso'))
+  await page.locator('[data-custom-submit]').click()
+  await waitForStatus(page, 'is running', 90_000)
+  await page.locator('[data-session-name]').filter({ hasText: 'TinyCore-11.0.iso' }).waitFor()
+  const frame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
+  assert(frame, 'QEMU custom-media frame is missing')
+  const args = await frame.evaluate(() => window.Module.arguments)
+  assert(args.some((value) => String(value).includes('media=cdrom')))
+  assert.equal(args.some((value) => String(value).includes('pflash')), false)
 }
 
 const port = await listen()
@@ -192,11 +213,11 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const pageErrors = []
-  page.on('pageerror', (error) => pageErrors.push(error))
+  page.on('pageerror', (error) => { pageErrors.push(error); console.error('Browser page error:', error.stack ?? error.message) })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').first().waitFor({ timeout: 10_000 })
   assert.equal(await page.evaluate(() => crossOriginIsolated), true)
-  await smokeV86(page)
+  await smokeV86(page, pageErrors)
   if (runQemu) await smokeQemu(page)
   assert.deepEqual(pageErrors.map((error) => error.message), [])
   console.log(`Browser smoke passed: v86${runQemu ? ' + QEMU x86-64 controls/OneDrive' : ''}`)

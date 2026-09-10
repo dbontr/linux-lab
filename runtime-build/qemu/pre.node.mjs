@@ -107,3 +107,16 @@ test('non-empty OneDrive directories cannot be removed recursively', () => {
   assert.equal(bridge.remove('/folder'), -39)
   assert.equal(calls.some((call) => call.method === 'DELETE'), false)
 })
+
+test('truncate-to-zero avoids downloading the old file', () => {
+  const { bridge, calls } = createBridge((call) => {
+    if (call.method === 'GET' && call.url.endsWith('/me/drive/root:/large')) {
+      return { text: graphItem('large', { size: 1024 * 1024 * 100 }) }
+    }
+    throw new Error(`unexpected request: ${call.method} ${call.url}`)
+  })
+
+  assert.equal(bridge.truncate('/large', 0), 0)
+  assert.equal(calls.length, 1)
+  assert.equal(calls.some((call) => call.url.endsWith('/content')), false)
+})
