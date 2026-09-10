@@ -30,17 +30,28 @@ jobs:
         run: sudo bash distro-build/alpine/build.sh
       - name: Verify built distro media
         run: npm run verify:media
+      - name: Compute x86-64 QEMU cache key
+        id: qemu-key
+        env:
+          INPUT_HASH: ${{ hashFiles('runtime-build/qemu/**', '!runtime-build/qemu/*.node.mjs') }}
+        run: echo "key=qemu-wasm-${RUNNER_OS}-${INPUT_HASH}" >> "$GITHUB_OUTPUT"
       - name: Restore x86-64 QEMU runtime
         id: qemu-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: public/qemu
-          key: qemu-wasm-${{ runner.os }}-${{ hashFiles('runtime-build/qemu/**') }}
+          key: ${{ steps.qemu-key.outputs.key }}
       - name: Build x86-64 QEMU runtime
         if: steps.qemu-cache.outputs.cache-hit != 'true'
         run: bash runtime-build/qemu/build.sh
       - name: Verify x86-64 QEMU runtime
         run: (cd public/qemu && sha256sum -c SHA256SUMS)
+      - name: Save x86-64 QEMU runtime
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: public/qemu
+          key: ${{ steps.qemu-key.outputs.key }}
       - run: npm test
       - run: npm run build
       - name: Install Chromium for browser smoke

@@ -19,6 +19,8 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
 - [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS`, exported C functions, and `ccall` used by the QEMU media, OneDrive, and control bridges.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
+- [xterm-pty v0.10.1](https://github.com/mame/xterm-pty/tree/v0.10.1) — Emscripten PTY bridge ABI linked into the QEMU-Wasm runtime; Linux Lab provides the compatible headless slave contract while SDL owns guest input.
+- [qemu-wasm x86-64 browser example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/x86_64) — upstream browser initialization pattern for the linked PTY bridge and modularized QEMU runtime.
 - [container2wasm](https://github.com/container2wasm/container2wasm/tree/v0.5.0) — pinned c2w-net-proxy v0.5.0 runtime used for browser HTTP/HTTPS forwarding.
 - [esbuild](https://esbuild.github.io/) — pinned build-only bundler for the QEMU browser networking bridge.
 - [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) — cross-origin isolation on static hosts such as GitHub Pages; Linux Lab pins commit `7b1d2a092d0d2dd2b7270b6f12f13605de26f214`.

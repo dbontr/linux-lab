@@ -21,6 +21,28 @@ function appendLog(value) {
   log.scrollTop = log.scrollHeight
 }
 
+function createHeadlessPty() {
+  let termios = {
+    iflag: 0x6500, oflag: 0x0005, cflag: 0x00bf, lflag: 0x8a3b,
+    cc: [0x03, 0x1c, 0x7f, 0x15, 0x04, 0x00, 0x01, 0x00, 0x11, 0x13, 0x1a, 0x00, 0x12, 0x0f, 0x17, 0x16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  }
+  const disposable = () => ({ dispose() {} })
+  const decoder = new TextDecoder()
+  return {
+    get readable() { return false },
+    get writable() { return true },
+    onReadable: disposable, onSignal: disposable,
+    read() { return [] },
+    write(bytes) { if (bytes?.length) appendLog(decoder.decode(Uint8Array.from(bytes), { stream: true })) },
+    ioctl(request, value) {
+      if (request === 'TCGETS') return { ...termios, cc: termios.cc.slice() }
+      if (request === 'TCSETS') { termios = { iflag: Number(value.iflag), oflag: Number(value.oflag), cflag: Number(value.cflag), lflag: Number(value.lflag), cc: Array.from(value.cc) }; return undefined }
+      if (request === 'TIOCGWINSZ') return [80, 24]
+      throw new Error(`Unsupported PTY ioctl: ${request}`)
+    },
+  }
+}
+
 function asset(name) {
   return new URL(name, qemuBase).href
 }
@@ -61,7 +83,7 @@ function bootArguments(mediaSource, kind, requestedMemory, firmware, networkEnab
     '-L', '/pack',
     '-display', 'sdl,gl=off',
     '-vga', 'std',
-    '-serial', 'stdio',
+    '-serial', 'none',
     '-monitor', 'none',
   ]
 
@@ -161,6 +183,7 @@ async function boot(request) {
   const moduleConfig = {
     arguments: bootArguments(mediaSource, request.kind, request.memoryMiB, request.firmware, networkEnabled, storageEnabled),
     canvas: screen,
+    pty: createHeadlessPty(),
     linuxLabNetworkCert: networkCertificate,
     linuxLabOneDriveToken: storageEnabled ? request.oneDriveToken : null,
     mainScriptUrlOrBlob: asset('out.js'),

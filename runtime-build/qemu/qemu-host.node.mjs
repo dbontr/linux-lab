@@ -98,3 +98,41 @@ test('QEMU readiness waits for the post-init control marker', async () => {
   await vm.runInContext('waitForQemuReady(readyModule)', context)
   assert.equal(polls, 3)
 })
+
+test('headless PTY satisfies the linked xterm-pty contract', () => {
+  const context = loadHost()
+  context.TextDecoder = TextDecoder
+  const result = vm.runInContext(`(() => {
+    const pty = createHeadlessPty();
+    const signal = pty.onSignal(() => {});
+    const readable = pty.onReadable(() => {});
+    const termios = pty.ioctl('TCGETS');
+    pty.ioctl('TCSETS', termios);
+    return {
+      readable: pty.readable,
+      writable: pty.writable,
+      read: pty.read(1),
+      winsize: pty.ioctl('TIOCGWINSZ'),
+      signalDisposable: typeof signal.dispose === 'function',
+      readableDisposable: typeof readable.dispose === 'function',
+      ccLength: termios.cc.length,
+    };
+  })()`, context)
+  assert.equal(result.readable, false)
+  assert.equal(result.writable, true)
+  assert.deepEqual(Array.from(result.read), [])
+  assert.deepEqual(Array.from(result.winsize), [80, 24])
+  assert.equal(result.signalDisposable && result.readableDisposable, true)
+  assert.equal(result.ccLength, 32)
+})
+
+test('QEMU SDL sessions disable the unused guest serial console', () => {
+  const context = loadHost()
+  const args = vm.runInContext(
+    "bootArguments('linuxlab:10:blob:test', 'cdrom', 512, 'bios', false, false)",
+    context,
+  )
+  const serial = args.indexOf('-serial')
+  assert.notEqual(serial, -1)
+  assert.deepEqual(Array.from(args.slice(serial, serial + 2)), ['-serial', 'none'])
+})
