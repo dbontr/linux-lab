@@ -18,8 +18,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -37,7 +37,7 @@ jobs:
         run: echo "key=qemu-wasm-${RUNNER_OS}-${INPUT_HASH}" >> "$GITHUB_OUTPUT"
       - name: Restore x86-64 QEMU runtime
         id: qemu-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: public/qemu
           key: ${{ steps.qemu-key.outputs.key }}
@@ -48,7 +48,7 @@ jobs:
         run: (cd public/qemu && sha256sum -c SHA256SUMS)
       - name: Save x86-64 QEMU runtime
         if: steps.qemu-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: public/qemu
           key: ${{ steps.qemu-key.outputs.key }}
@@ -58,8 +58,8 @@ jobs:
         run: npx playwright-core install --with-deps chromium
       - name: Browser runtime smoke
         run: npm run test:browser
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -73,4 +73,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
