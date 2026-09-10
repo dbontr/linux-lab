@@ -1,6 +1,6 @@
 # Linux Lab
 
-Linux Lab boots compatible Linux PC media directly in a browser from GitHub Pages. It supports prepared 32-bit x86 guests, an x86-64 QEMU-Wasm compatibility runtime, local ISO/IMG uploads, and optional OneDrive storage for v86 guests.
+Linux Lab boots compatible Linux PC media directly in a browser from GitHub Pages. It supports prepared 32-bit x86 guests, an x86-64 QEMU-Wasm compatibility runtime, local ISO/IMG uploads, browser VM controls, and optional OneDrive storage for compatible guests.
 
 **Pages:** https://dbontr.github.io/linux-lab/
 
@@ -14,7 +14,7 @@ Linux Lab boots compatible Linux PC media directly in a browser from GitHub Page
 - Automatic runtime and BIOS/UEFI selection with manual overrides.
 - Prepared Alpine x86, Alpine x86-64, and Tiny Core catalog targets.
 - Browser-native networking for v86 guests and browser-proxied HTTP/HTTPS for QEMU guests.
-- Optional OneDrive storage exposed to compatible v86 guests as `host9p`.
+- Optional OneDrive storage exposed to compatible v86 and QEMU guests as `host9p`.
 - PKCE Microsoft authentication with no client secret and no OAuth token exposed to the guest.
 - SHA-256-pinned external boot/build inputs and reproducible GitHub Actions deployment.
 
@@ -36,6 +36,8 @@ GitHub Pages
     Range-backed browser ISO/IMG media
     SeaBIOS + EDK2 UEFI firmware
     Browser HTTP/HTTPS proxy
+    host9p -> OneDrive
+    Pause/resume and programmatic keyboard input
 ```
 
 The host selects a runtime from the manifest. Prepared 32-bit guests use v86. x86-64 and architecture-unknown PC media use QEMU-Wasm unless the user explicitly overrides it.
@@ -69,9 +71,9 @@ This path supports HTTP and HTTPS through the browser Fetch API. Browser CORS po
 
 ## OneDrive
 
-OneDrive integration currently belongs to the v86 backend. When connected before boot, Linux Lab exposes a custom `9P2000.L` server as `host9p`. Prepared Alpine mounts it at `/mnt/onedrive` automatically; other compatible v86 Linux guests can mount it manually.
+When connected before boot, Linux Lab exposes OneDrive as the `host9p` virtio filesystem. The v86 backend uses the browser-native custom `9P2000.L` server. The QEMU backend maps ordinary files and directories through a host-only Emscripten filesystem adapter that performs lazy Microsoft Graph metadata queries and ranged reads, then flushes modified files back through Graph. Prepared Alpine mounts `host9p` at `/mnt/onedrive` automatically; other compatible Linux guests can mount it manually.
 
-The QEMU x86-64 path does not yet expose the OneDrive 9P bridge. That storage bridge remains a backend capability gap, not a guest-image format restriction.
+OAuth access and refresh tokens remain outside the guest-visible share. The guest receives filesystem semantics only; it does not receive Microsoft credentials. OneDrive maps ordinary files and directories rather than Unix device nodes, hard links, or symbolic links.
 
 ## Run locally
 
@@ -98,9 +100,9 @@ Generated VM images and QEMU binaries are ignored by Git and rebuilt or restored
 
 ## Verification
 
-`npm run check` runs the protocol/media unit tests, strict TypeScript compilation, and the production Vite build. The media tests cover ISO detection, El Torito UEFI detection, GPT EFI System Partition detection, and BIOS fallback.
+`npm run check` runs the protocol/media tests, QEMU host/OneDrive bridge tests, strict TypeScript compilation, and the production Vite build. The media tests cover ISO detection, El Torito UEFI detection, GPT EFI System Partition detection, and BIOS fallback.
 
-The Pages workflow repeats verification, validates generated distro media, and builds the source-pinned QEMU-Wasm runtime and network bridge before deployment.
+The Pages workflow repeats verification, validates generated distro media, builds and checksum-verifies the source-pinned QEMU-Wasm runtime, installs a disposable Chromium test runtime, and runs browser smoke tests across the v86 and QEMU backends before deployment. QEMU is not reported as running until its `qemu_init()` path has completed.
 
 ## Compatibility boundary
 

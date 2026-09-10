@@ -81,11 +81,11 @@ export class V86Runtime implements VirtualMachineRuntime {
     else await this.emulator.run()
   }
 
-  restart(): void { this.emulator?.restart() }
+  async restart(): Promise<void> { this.emulator?.restart() }
   fullscreen(): void { this.emulator?.screen_go_fullscreen() }
   lockMouse(): void { this.emulator?.lock_mouse() }
 
-  sendText(text: string): void {
+  async sendText(text: string): Promise<void> {
     if (!this.emulator) throw new Error('No Linux session is running')
     this.emulator.keyboard_send_text(text)
   }

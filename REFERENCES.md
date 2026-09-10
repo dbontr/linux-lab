@@ -17,7 +17,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
-- [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS` bridge used by the QEMU block protocol for browser range reads.
+- [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS`, exported C functions, and `ccall` used by the QEMU media, OneDrive, and control bridges.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
 - [container2wasm](https://github.com/container2wasm/container2wasm/tree/v0.5.0) — pinned c2w-net-proxy v0.5.0 runtime used for browser HTTP/HTTPS forwarding.
 - [esbuild](https://esbuild.github.io/) — pinned build-only bundler for the QEMU browser networking bridge.
@@ -37,6 +37,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Upload small files](https://learn.microsoft.com/en-us/graph/api/driveitem-put-content) — direct file writes.
 - [Create an upload session](https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession) — resumable large-file writes.
 - [Move a DriveItem](https://learn.microsoft.com/en-us/graph/api/driveitem-move) — rename and move semantics.
+- [Delete a DriveItem](https://learn.microsoft.com/en-us/graph/api/driveitem-delete) — file and empty-directory removal behavior.
 
 ## Distribution and build artifacts
 
@@ -50,6 +51,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Vite static deployment guide](https://vite.dev/guide/static-deploy.html) — repository-relative base path and Pages deployment guidance.
 - [GitHub Pages custom Actions workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) — official Pages artifact/deploy workflow.
 - [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) — hosting constraints relevant to boot-image size and traffic.
+- [Playwright browser automation](https://playwright.dev/docs/api/class-browsertype) — Chromium launch and browser-level release smoke verification.
 
 ## Project decisions derived from these references
 
@@ -59,6 +61,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.
+- Both runtime backends expose OneDrive under the `host9p` mount tag. QEMU maps Graph-backed ordinary files and directories through a host-only Emscripten filesystem adapter with lazy reads and explicit write-back.
 - OneDrive is mounted as user storage rather than used as a Linux block device because Microsoft Graph exposes object/file semantics rather than a POSIX block filesystem.
 - Linux Lab implements the `9P2000.L` subset needed for ordinary file and directory workflows. Unsupported Unix object types fail explicitly instead of being silently misrepresented.
 - External BIOS/media/build sources are pinned or SHA-256 verified; generated VM artifacts are produced by GitHub Actions rather than committed as large binaries.
