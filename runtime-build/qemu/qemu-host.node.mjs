@@ -6,6 +6,7 @@ import vm from 'node:vm'
 const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.meta.url), 'utf8')
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
+const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 
 function loadHost() {
   const screen = { focus() {} }
@@ -172,9 +173,10 @@ test('QEMU browser controls cross threads without allocating on the page thread'
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_text_bh_handle\)/)
   assert.doesNotMatch(controlSource, /aio_bh_schedule_oneshot/)
   assert.doesNotMatch(controlSource, /g_new|g_strdup|g_free/)
-  assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
-  assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
-  assert.match(controlSource, /emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)
+  assert.match(controlSource, /emscripten_sleep\(1\)/)
+  assert.match(buildSource, /-sASYNCIFY=1/)
+  assert.doesNotMatch(controlSource, /emscripten_atomic_wait_u32\(/)
+  assert.doesNotMatch(controlSource, /emscripten_atomic_notify\(/)
   assert.doesNotMatch(controlSource, /emscripten_futex_wait\(/)
   assert.doesNotMatch(controlSource, /emscripten_futex_wake\(/)
   assert.match(controlSource, /qatomic_read\(&cpu->running\)/)
