@@ -155,6 +155,11 @@ async function smokeV86(page) {
   await waitForStatus(page, 'is running', 30_000)
   const runtime = await page.locator('[data-facts] dd').nth(3).textContent()
   assert.equal(runtime, 'v86')
+
+  await page.locator('.distro-card').nth(2).click()
+  await page.locator('[data-boot]').click()
+  await waitForStatus(page, 'Tiny Core Linux is running', 30_000)
+  assert.equal(await page.locator('[data-facts] dd').nth(3).textContent(), 'v86')
 }
 
 async function smokeQemu(page) {

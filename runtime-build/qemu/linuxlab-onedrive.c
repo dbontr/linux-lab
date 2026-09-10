@@ -274,7 +274,8 @@ static int linuxlab_rename(FsContext *ctx, const char *from, const char *to)
 
 static int linuxlab_renameat(FsContext *ctx, V9fsPath *old_dir, const char *old_name,
                              V9fsPath *new_dir, const char *new_name)
-{    g_autofree char *from = NULL;
+{
+    g_autofree char *from = NULL;
     g_autofree char *to = NULL;
     if (!linuxlab_od_enabled(ctx)) {
         return linuxlab_local_ops.renameat(ctx, old_dir, old_name, new_dir, new_name);
@@ -296,7 +297,7 @@ static int linuxlab_unlinkat(FsContext *ctx, V9fsPath *dir, const char *name, in
     path = linuxlab_od_child(dir, name);
     if (linuxlab_od_result(linuxlab_od_ensure(path)) < 0) return -1;
     target.data = path;
-    target.size = strlen(path) + 1;
+    target.size = (uint16_t)(strlen(path) + 1);
     if (linuxlab_local_ops.lstat(ctx, &target, &stbuf) < 0) return -1;
     if (S_ISDIR(stbuf.st_mode) && !remove_dir) { errno = EISDIR; return -1; }
     if (!S_ISDIR(stbuf.st_mode) && remove_dir) { errno = ENOTDIR; return -1; }

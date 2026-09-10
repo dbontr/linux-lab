@@ -22,7 +22,7 @@ void linuxlab_runtime_ready(void)
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 {
-    return qatomic_read(&linuxlab_ready);
+    return qatomic_read(&linuxlab_ready) && runstate_is_running();
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)

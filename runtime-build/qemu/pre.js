@@ -116,7 +116,9 @@ Module['linuxLabOneDriveBridge'] = (function () {
     if (options.contentRange) xhr.setRequestHeader('Content-Range', options.contentRange);
     xhr.send(options.body === undefined ? null : options.body);
     if (xhr.status < 200 || xhr.status >= 300) {
-      throw failure(xhr.status, xhr.responseText || undefined);
+      var detail = '';
+      try { detail = xhr.responseText || ''; } catch (_) {}
+      throw failure(xhr.status, detail || undefined);
     }
     return xhr;
   }
