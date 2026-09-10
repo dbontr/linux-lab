@@ -56,24 +56,32 @@ test('QEMU boot arguments keep offline guests isolated from host shares', () => 
   assert.deepEqual(Array.from(args.slice(-2)), ['-boot', 'order=c'])
 })
 
-test('browser controls map to the exported QEMU control boundary', () => {
+test('browser controls map to the exported QEMU control boundary', async () => {
   const context = loadHost()
   context.controlCalls = []
+  context.runState = 1
   vm.runInContext(`
     qemuModule = {
-      ccall: (...args) => controlCalls.push(args),
+      ccall: (name, ...args) => {
+        controlCalls.push([name, ...args]);
+        if (name === 'linuxlab_pause') runState = 0;
+        if (name === 'linuxlab_resume') runState = 1;
+        if (name === 'linuxlab_is_running') return runState;
+      },
     };
-    handleControl({ action: 'pause' });
-    handleControl({ action: 'resume' });
-    handleControl({ action: 'send-text', text: 'hello' });
   `, context)
 
-  assert.deepEqual(context.controlCalls.map((call) => call[0]), [
+  await vm.runInContext("handleControl({ action: 'pause' })", context)
+  await vm.runInContext("handleControl({ action: 'resume' })", context)
+  await vm.runInContext("handleControl({ action: 'send-text', text: 'hello' })", context)
+
+  const actions = context.controlCalls.filter((call) => call[0] !== 'linuxlab_is_running')
+  assert.deepEqual(actions.map((call) => call[0]), [
     'linuxlab_pause',
     'linuxlab_resume',
     'linuxlab_send_text',
   ])
-  assert.deepEqual(Array.from(context.controlCalls[2][3]), ['hello'])
+  assert.deepEqual(Array.from(actions[2][3]), ['hello'])
 })
 
 test('QEMU readiness waits for the post-init control marker', async () => {

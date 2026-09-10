@@ -25,6 +25,11 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
     return qatomic_read(&linuxlab_ready);
 }
 
+EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
+{
+    return runstate_is_running() ? 1 : 0;
+}
+
 static void linuxlab_pause_bh(void *opaque)
 {
     (void)opaque;

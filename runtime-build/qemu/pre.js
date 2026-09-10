@@ -134,7 +134,6 @@ Module['linuxLabOneDriveBridge'] = (function () {
       size: Number(item.size || 0),
       directory: !!item.folder,
       modifiedAt: Date.parse(item.lastModifiedDateTime || '') || Date.now(),
-      downloadUrl: item['@microsoft.graph.downloadUrl'] || '',
       expiresAt: Date.now() + META_TTL_MS,
     };
     metadata.set(remote, value);
@@ -263,16 +262,9 @@ Module['linuxLabOneDriveBridge'] = (function () {
 
   function download(path, range) {
     var remote = normalize(path);
-    var item = getItem(remote, false);
     var options = { binary: true };
-    var url = item.downloadUrl;
     if (range) options.range = range;
-    if (url) {
-      options.auth = false;
-    } else {
-      url = itemUrl(remote, '/content');
-    }
-    var xhr = request('GET', url, options);
+    var xhr = request('GET', itemUrl(remote, '/content'), options);
     return {
       bytes: new Uint8Array(xhr.response || new ArrayBuffer(0)),
       partial: xhr.status === 206,

@@ -287,9 +287,19 @@ static int linuxlab_renameat(FsContext *ctx, V9fsPath *old_dir, const char *old_
 
 static int linuxlab_unlinkat(FsContext *ctx, V9fsPath *dir, const char *name, int flags)
 {
+    struct stat stbuf;
+    V9fsPath target;
     g_autofree char *path = NULL;
+    bool remove_dir = (flags & AT_REMOVEDIR) != 0;
+
     if (!linuxlab_od_enabled(ctx)) return linuxlab_local_ops.unlinkat(ctx, dir, name, flags);
     path = linuxlab_od_child(dir, name);
+    if (linuxlab_od_result(linuxlab_od_ensure(path)) < 0) return -1;
+    target.data = path;
+    target.size = strlen(path) + 1;
+    if (linuxlab_local_ops.lstat(ctx, &target, &stbuf) < 0) return -1;
+    if (S_ISDIR(stbuf.st_mode) && !remove_dir) { errno = EISDIR; return -1; }
+    if (!S_ISDIR(stbuf.st_mode) && remove_dir) { errno = ENOTDIR; return -1; }
     if (linuxlab_od_result(linuxlab_od_remove(path)) < 0) return -1;
     return linuxlab_local_ops.unlinkat(ctx, dir, name, flags);
 }

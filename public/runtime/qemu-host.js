@@ -2,6 +2,7 @@ const SOURCE = 'linux-lab-qemu'
 const NETWORK_ADDRESS = 'http://localhost:9999/'
 const NETWORK_READY_TIMEOUT_MS = 20_000
 const QEMU_READY_TIMEOUT_MS = 30_000
+const CONTROL_STATE_TIMEOUT_MS = 5_000
 const screen = document.getElementById('screen')
 const log = document.getElementById('log')
 const qemuBase = new URL('../qemu/', location.href)
@@ -196,23 +197,35 @@ function updateOneDriveToken(token) {
   if (typeof update === 'function') update(token)
 }
 
-function handleControl(request) {
+async function handleControl(request) {
   if (!qemuModule || typeof qemuModule.ccall !== 'function') {
     throw new Error('QEMU control interface is not ready')
   }
   switch (request.action) {
     case 'pause':
       qemuModule.ccall('linuxlab_pause', null, [], [])
-      break
+      await waitForRunState(false)
+      return
     case 'resume':
       qemuModule.ccall('linuxlab_resume', null, [], [])
-      break
+      await waitForRunState(true)
+      return
     case 'send-text':
       qemuModule.ccall('linuxlab_send_text', null, ['string'], [String(request.text ?? '')])
-      break
+      return
     default:
       throw new Error(`Unknown QEMU control action: ${String(request.action)}`)
   }
+}
+
+async function waitForRunState(running) {
+  const deadline = Date.now() + CONTROL_STATE_TIMEOUT_MS
+  const expected = running ? 1 : 0
+  while (Date.now() < deadline) {
+    if (qemuModule.ccall('linuxlab_is_running', 'number', [], []) === expected) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`QEMU did not ${running ? 'resume' : 'pause'}`)
 }
 addEventListener('message', (event) => {
   if (event.origin !== location.origin || event.source !== parent) return
@@ -230,14 +243,13 @@ addEventListener('message', (event) => {
     return
   }
   if (request?.type === 'control') {
-    try {
-      handleControl(request)
+    void handleControl(request).then(() => {
       if (typeof request.id === 'number') post('control-result', { id: request.id, action: request.action, ok: true })
-    } catch (error) {
+    }).catch((error) => {
       if (typeof request.id === 'number') {
         post('control-result', { id: request.id, action: request.action, ok: false, message: error instanceof Error ? error.message : String(error) })
       }
-    }
+    })
   }
 })
 
