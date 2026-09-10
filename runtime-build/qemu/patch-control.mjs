@@ -25,6 +25,6 @@ const callAnchor = `    qemu_init(argc, argv);${eol}    return qemu_main();`
 if (!mainSource.includes(prototypeAnchor) || !mainSource.includes(callAnchor)) {
   throw new Error('QEMU main control anchors changed')
 }
-let patched = mainSource.replace(prototypeAnchor, `${eol}void linuxlab_runtime_ready(void);${eol}${eol}int qemu_default_main(void)`)
-patched = patched.replace(callAnchor, `    qemu_init(argc, argv);${eol}    linuxlab_runtime_ready();${eol}    return qemu_main();`)
+let patched = mainSource.replace(prototypeAnchor, `${eol}void linuxlab_runtime_prepare(void);${eol}void linuxlab_runtime_ready(void);${eol}${eol}int qemu_default_main(void)`)
+patched = patched.replace(callAnchor, `    linuxlab_runtime_prepare();${eol}    qemu_init(argc, argv);${eol}    linuxlab_runtime_ready();${eol}    return qemu_main();`)
 await writeFile(mainPath, patched, 'utf8')

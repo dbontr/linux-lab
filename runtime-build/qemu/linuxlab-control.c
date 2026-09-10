@@ -15,6 +15,13 @@ typedef struct LinuxLabTextRequest {
 
 static int linuxlab_ready;
 
+void linuxlab_runtime_prepare(void)
+{
+    if (mkdir("/linuxlab-onedrive", 0700) < 0 && errno != EEXIST) {
+        fprintf(stderr, "Linux Lab: cannot create OneDrive 9P root: %s\n", strerror(errno));
+    }
+}
+
 void linuxlab_runtime_ready(void)
 {
     qatomic_set(&linuxlab_ready, 1);
