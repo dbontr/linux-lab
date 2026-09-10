@@ -224,6 +224,7 @@ const baseUrl = `http://127.0.0.1:${port}${pagePath}`
 const browser = await chromium.launch({
   executablePath: browserExecutable(),
   headless: true,
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 })
 
 try {
@@ -233,6 +234,9 @@ try {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').first().waitFor({ timeout: 10_000 })
   assert.equal(await page.evaluate(() => crossOriginIsolated), true)
+  if (runQemu) {
+    assert.equal(await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl'))), true, 'QEMU browser smoke requires WebGL')
+  }
   await smokeV86(page, pageErrors)
   if (runQemu) await smokeQemu(page)
   assert.deepEqual(pageErrors.map((error) => error.message), [])
