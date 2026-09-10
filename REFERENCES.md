@@ -14,10 +14,10 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 
 ## Browser runtime support
 
-- [Chromium SwiftShader documentation](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/gpu/swiftshader.md) — deterministic software WebGL configuration for GPU-less browser CI.
+- [SDL 2.24.2 Emscripten framebuffer](https://github.com/libsdl-org/SDL/blob/release-2.24.2/src/video/emscripten/SDL_emscriptenframebuffer.c) — software-renderer framebuffer path used by QEMU's `gl=off` display; browser presentation is performed with Canvas 2D on the main thread.
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
-- [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread canvas transfer and WebGL fallback settings used by the QEMU SDL runtime.
+- [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread and WebAssembly runtime settings used by the QEMU browser build.
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
 - [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS`, exported C functions, and `ccall` used by the QEMU media, OneDrive, and control bridges.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
@@ -62,6 +62,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - Linux Lab uses two runtime backends: v86 for the prepared 32-bit path and QEMU-Wasm for x86-64 or architecture-unknown PC ISO/IMG media.
 - Local ISO/IMG uploads remain browser `File` objects. QEMU reads them through a read-only `linuxlab:` block protocol backed by ranged reads from a same-origin `blob:` URL, so large source media is not duplicated into Wasm memory before boot.
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
+- QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.

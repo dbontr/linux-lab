@@ -57,6 +57,8 @@ jobs:
       - name: Install Chromium for browser smoke
         run: npx playwright-core install --with-deps chromium
       - name: Browser runtime smoke
+        env:
+          LINUX_LAB_SMOKE_QEMU: '1'
         run: npm run test:browser
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

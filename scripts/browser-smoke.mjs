@@ -8,7 +8,17 @@ import { chromium } from 'playwright-core'
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const distRoot = resolve(repoRoot, 'dist')
 const pagePath = '/linux-lab/'
-const runQemu = process.env.LINUX_LAB_SMOKE_QEMU !== '0'
+const qemuAssets = [
+  'qemu/load.js',
+  'qemu/out.js',
+  'qemu/qemu-system-x86_64.wasm',
+  'qemu/qemu-system-x86_64.worker.js',
+  'qemu/network/stack.js',
+]
+const qemuAvailable = qemuAssets.every((path) => existsSync(resolve(distRoot, path)))
+const qemuMode = process.env.LINUX_LAB_SMOKE_QEMU
+if (qemuMode === '1' && !qemuAvailable) throw new Error('QEMU browser smoke was required, but generated runtime assets are missing')
+const runQemu = qemuMode === '1' || (qemuMode !== '0' && qemuAvailable)
 const mime = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
@@ -224,7 +234,6 @@ const baseUrl = `http://127.0.0.1:${port}${pagePath}`
 const browser = await chromium.launch({
   executablePath: browserExecutable(),
   headless: true,
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 })
 
 try {
@@ -234,9 +243,6 @@ try {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').first().waitFor({ timeout: 10_000 })
   assert.equal(await page.evaluate(() => crossOriginIsolated), true)
-  if (runQemu) {
-    assert.equal(await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl'))), true, 'QEMU browser smoke requires WebGL')
-  }
   await smokeV86(page, pageErrors)
   if (runQemu) await smokeQemu(page)
   assert.deepEqual(pageErrors.map((error) => error.message), [])
