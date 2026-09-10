@@ -17,6 +17,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Chromium SwiftShader documentation](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/gpu/swiftshader.md) — deterministic software WebGL configuration for GPU-less browser CI.
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
+- [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread canvas transfer and WebGL fallback settings used by the QEMU SDL runtime.
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
 - [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS`, exported C functions, and `ccall` used by the QEMU media, OneDrive, and control bridges.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
