@@ -154,8 +154,11 @@ test('OneDrive token channel rejects oversized-token failures', () => {
 })
 
 test('QEMU browser pause parks at the Wasm TB dispatcher boundary', () => {
-  assert.match(controlSource, /emscripten_futex_wait\(&linuxlab_paused/)
-  assert.match(controlSource, /emscripten_futex_wake\(&linuxlab_paused/)
+  assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
+  assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
+  assert.match(controlSource, /emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)
+  assert.doesNotMatch(controlSource, /emscripten_futex_wait\(/)
+  assert.doesNotMatch(controlSource, /emscripten_futex_wake\(/)
   assert.match(controlSource, /qatomic_read\(&cpu->running\)/)
   assert.match(controlPatchSource, /linuxlab_vcpu_pause_point\(\);/)
   assert.match(controlPatchSource, /linuxlab_vcpu_pause_point\(\);\$\{wasm32Eol\}        trysleep\(\);/)

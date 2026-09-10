@@ -7,9 +7,8 @@
 #include "sysemu/runstate.h"
 #include "ui/input.h"
 
+#include <emscripten/atomic.h>
 #include <emscripten/emscripten.h>
-#include <emscripten/threading.h>
-#include <math.h>
 
 typedef struct LinuxLabTextRequest {
     char *text;
@@ -47,7 +46,11 @@ void linuxlab_vcpu_pause_point(void)
 
     qatomic_inc(&linuxlab_pause_waiters);
     while (qatomic_read(&linuxlab_paused)) {
-        emscripten_futex_wait(&linuxlab_paused, 1, INFINITY);
+        emscripten_atomic_wait_u32(
+            &linuxlab_paused,
+            1,
+            ATOMICS_WAIT_DURATION_INFINITE
+        );
     }
     qatomic_dec(&linuxlab_pause_waiters);
 }
@@ -96,7 +99,7 @@ static void linuxlab_resume_bh(void *opaque)
     }
 
     qatomic_set(&linuxlab_paused, 0);
-    emscripten_futex_wake(&linuxlab_paused, INT_MAX);
+    emscripten_atomic_notify(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {
