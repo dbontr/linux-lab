@@ -9,6 +9,7 @@
 
 #include <emscripten/emscripten.h>
 #include <emscripten/threading.h>
+#include <math.h>
 
 typedef struct LinuxLabTextRequest {
     char *text;
@@ -16,8 +17,7 @@ typedef struct LinuxLabTextRequest {
 } LinuxLabTextRequest;
 
 static int linuxlab_ready;
-static int linuxlab_paused;
-static int linuxlab_pause_target;
+static uint32_t linuxlab_paused;
 static int linuxlab_pause_waiters;
 
 void linuxlab_runtime_prepare(void)
@@ -29,7 +29,6 @@ void linuxlab_runtime_prepare(void)
 
 void linuxlab_runtime_ready(void)
 {
-    qatomic_set(&linuxlab_pause_target, 0);
     qatomic_set(&linuxlab_pause_waiters, 0);
     qatomic_set(&linuxlab_paused, 0);
     qatomic_set(&linuxlab_ready, 1);
@@ -61,38 +60,32 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
+    CPUState *cpu;
+    int running = 0;
+
     if (!runstate_is_running()) {
         return 0;
     }
     if (!qatomic_read(&linuxlab_paused)) {
         return qatomic_read(&linuxlab_pause_waiters) == 0;
     }
-    return qatomic_read(&linuxlab_pause_waiters) <
-        qatomic_read(&linuxlab_pause_target);
+
+    CPU_FOREACH(cpu) {
+        if (qatomic_read(&cpu->running)) {
+            running++;
+        }
+    }
+    return running > qatomic_read(&linuxlab_pause_waiters);
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
-    CPUState *cpu;
-    int target = 0;
-
     (void)opaque;
     if (!runstate_is_running() || qatomic_read(&linuxlab_paused)) {
         return;
     }
 
-    CPU_FOREACH(cpu) {
-        if (!cpu->halted && !cpu->stopped) {
-            target++;
-        }
-    }
-    qatomic_set(&linuxlab_pause_target, target);
     qatomic_set(&linuxlab_paused, 1);
-    CPU_FOREACH(cpu) {
-        if (!cpu->halted && !cpu->stopped) {
-            cpu_exit(cpu);
-        }
-    }
 }
 
 static void linuxlab_resume_bh(void *opaque)
@@ -104,7 +97,6 @@ static void linuxlab_resume_bh(void *opaque)
 
     qatomic_set(&linuxlab_paused, 0);
     emscripten_futex_wake(&linuxlab_paused, INT_MAX);
-    qatomic_set(&linuxlab_pause_target, 0);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {

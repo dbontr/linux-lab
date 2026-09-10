@@ -5,6 +5,7 @@ import vm from 'node:vm'
 
 const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.meta.url), 'utf8')
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
+const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
 
 function loadHost() {
   const screen = { focus() {} }
@@ -152,10 +153,13 @@ test('OneDrive token channel rejects oversized-token failures', () => {
   assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
 })
 
-test('QEMU browser pause parks MTTCG outside global pause machinery', () => {
-  assert.match(controlSource, /cpu_exit\(cpu\)/)
+test('QEMU browser pause parks at the Wasm TB dispatcher boundary', () => {
   assert.match(controlSource, /emscripten_futex_wait\(&linuxlab_paused/)
   assert.match(controlSource, /emscripten_futex_wake\(&linuxlab_paused/)
+  assert.match(controlSource, /qatomic_read\(&cpu->running\)/)
+  assert.match(controlPatchSource, /linuxlab_vcpu_pause_point\(\);/)
+  assert.match(controlPatchSource, /linuxlab_vcpu_pause_point\(\);\$\{wasm32Eol\}        trysleep\(\);/)
+  assert.doesNotMatch(controlSource, /cpu_exit\(cpu\)/)
   assert.doesNotMatch(controlSource, /cpu->stop = true/)
   assert.doesNotMatch(controlSource, /qemu_cpu_kick\(cpu\)/)
   assert.doesNotMatch(controlSource, /cpu_resume\(cpu\)/)
@@ -165,4 +169,5 @@ test('QEMU browser pause parks MTTCG outside global pause machinery', () => {
   assert.doesNotMatch(controlSource, /resume_all_vcpus\(\)/)
   assert.doesNotMatch(controlSource, /vm_stop\(/)
   assert.doesNotMatch(controlSource, /vm_start\(/)
+  assert.doesNotMatch(controlPatchSource, /tcg-accel-ops-mttcg/)
 })

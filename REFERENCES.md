@@ -64,7 +64,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - Local ISO/IMG uploads remain browser `File` objects. QEMU reads them through a read-only `linuxlab:` block protocol backed by ranged reads from a same-origin `blob:` URL, so large source media is not duplicated into Wasm memory before boot.
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
 - QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
-- QEMU browser Pause interrupts active TCG execution and parks MTTCG vCPUs outside the Big QEMU Lock on an aligned Emscripten futex word; Resume wakes that word directly.
+- QEMU browser Pause is observed at qemu-wasm's translation-block dispatcher and parks executing vCPU pthreads outside the Big QEMU Lock on an aligned Emscripten futex word; Resume wakes that word directly.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.
