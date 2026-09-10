@@ -69,6 +69,7 @@ test('browser controls map to the exported QEMU control boundary', async () => {
         if (name === 'linuxlab_pause') runState = 0;
         if (name === 'linuxlab_resume') runState = 1;
         if (name === 'linuxlab_is_running') return runState;
+        if (name === 'linuxlab_send_text') return 0;
       },
     };
   `, context)
@@ -84,6 +85,15 @@ test('browser controls map to the exported QEMU control boundary', async () => {
     'linuxlab_send_text',
   ])
   assert.deepEqual(Array.from(actions[2][3]), ['hello'])
+})
+
+test('browser text control surfaces a busy QEMU input channel', async () => {
+  const context = loadHost()
+  vm.runInContext("qemuModule = { ccall: () => -3 }", context)
+  await assert.rejects(
+    vm.runInContext("handleControl({ action: 'send-text', text: 'hello' })", context),
+    /text input is busy/,
+  )
 })
 
 test('QEMU readiness waits for the post-init control marker', async () => {
@@ -153,7 +163,15 @@ test('OneDrive token channel rejects oversized-token failures', () => {
   assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
 })
 
-test('QEMU browser pause parks at the Wasm TB dispatcher boundary', () => {
+test('QEMU browser controls cross threads without allocating on the page thread', () => {
+  assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
+  assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
+  assert.match(controlSource, /qemu_bh_new\(linuxlab_text_bh, NULL\)/)
+  assert.match(controlSource, /qemu_bh_schedule\(linuxlab_pause_bh_handle\)/)
+  assert.match(controlSource, /qemu_bh_schedule\(linuxlab_resume_bh_handle\)/)
+  assert.match(controlSource, /qemu_bh_schedule\(linuxlab_text_bh_handle\)/)
+  assert.doesNotMatch(controlSource, /aio_bh_schedule_oneshot/)
+  assert.doesNotMatch(controlSource, /g_new|g_strdup|g_free/)
   assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
   assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
   assert.match(controlSource, /emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)

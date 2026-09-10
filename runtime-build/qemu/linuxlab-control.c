@@ -10,14 +10,21 @@
 #include <emscripten/atomic.h>
 #include <emscripten/emscripten.h>
 
-typedef struct LinuxLabTextRequest {
-    char *text;
-    size_t offset;
-} LinuxLabTextRequest;
+#define LINUXLAB_TEXT_CAPACITY 4096
+
+static void linuxlab_pause_bh(void *opaque);
+static void linuxlab_resume_bh(void *opaque);
+static void linuxlab_text_bh(void *opaque);
 
 static int linuxlab_ready;
 static uint32_t linuxlab_paused;
 static int linuxlab_pause_waiters;
+static QEMUBH *linuxlab_pause_bh_handle;
+static QEMUBH *linuxlab_resume_bh_handle;
+static QEMUBH *linuxlab_text_bh_handle;
+static char linuxlab_text_buffer[LINUXLAB_TEXT_CAPACITY];
+static uint32_t linuxlab_text_length;
+static uint32_t linuxlab_text_busy;
 
 void linuxlab_runtime_prepare(void)
 {
@@ -30,6 +37,11 @@ void linuxlab_runtime_ready(void)
 {
     qatomic_set(&linuxlab_pause_waiters, 0);
     qatomic_set(&linuxlab_paused, 0);
+    qatomic_set(&linuxlab_text_length, 0);
+    qatomic_set(&linuxlab_text_busy, 0);
+    linuxlab_pause_bh_handle = qemu_bh_new(linuxlab_pause_bh, NULL);
+    linuxlab_resume_bh_handle = qemu_bh_new(linuxlab_resume_bh, NULL);
+    linuxlab_text_bh_handle = qemu_bh_new(linuxlab_text_bh, NULL);
     qatomic_set(&linuxlab_ready, 1);
 }
 
@@ -150,33 +162,47 @@ static void linuxlab_send_character(unsigned char ch)
 
 static void linuxlab_text_bh(void *opaque)
 {
-    LinuxLabTextRequest *request = opaque;
-    while (request->text[request->offset] != '\0') {
-        unsigned char ch = (unsigned char)request->text[request->offset++];
-        if (ch >= 0x80) continue;
-        linuxlab_send_character(ch);
-        aio_bh_schedule_oneshot(qemu_get_aio_context(), linuxlab_text_bh, request);
-        return;
+    uint32_t length = qatomic_read(&linuxlab_text_length);
+    uint32_t i;
+
+    (void)opaque;
+    for (i = 0; i < length; i++) {
+        unsigned char ch = (unsigned char)linuxlab_text_buffer[i];
+        if (ch < 0x80) {
+            linuxlab_send_character(ch);
+        }
     }
-    g_free(request->text);
-    g_free(request);
+    qatomic_set(&linuxlab_text_length, 0);
+    qatomic_set(&linuxlab_text_busy, 0);
 }
 
 EMSCRIPTEN_KEEPALIVE void linuxlab_pause(void)
 {
-    aio_bh_schedule_oneshot(qemu_get_aio_context(), linuxlab_pause_bh, NULL);
+    if (linuxlab_pause_bh_handle) {
+        qemu_bh_schedule(linuxlab_pause_bh_handle);
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE void linuxlab_resume(void)
 {
-    aio_bh_schedule_oneshot(qemu_get_aio_context(), linuxlab_resume_bh, NULL);
+    if (linuxlab_resume_bh_handle) {
+        qemu_bh_schedule(linuxlab_resume_bh_handle);
+    }
 }
 
-EMSCRIPTEN_KEEPALIVE void linuxlab_send_text(const char *text)
+EMSCRIPTEN_KEEPALIVE int linuxlab_send_text(const char *text)
 {
-    LinuxLabTextRequest *request;
-    if (!text || !*text) return;
-    request = g_new0(LinuxLabTextRequest, 1);
-    request->text = g_strdup(text);
-    aio_bh_schedule_oneshot(qemu_get_aio_context(), linuxlab_text_bh, request);
+    size_t length;
+
+    if (!text || !*text) return 0;
+    if (!linuxlab_text_bh_handle) return -1;
+    length = strlen(text);
+    if (length >= sizeof(linuxlab_text_buffer)) return -2;
+    if (qatomic_cmpxchg(&linuxlab_text_busy, 0, 1) != 0) return -3;
+
+    memcpy(linuxlab_text_buffer, text, length);
+    linuxlab_text_buffer[length] = '\0';
+    qatomic_set(&linuxlab_text_length, (uint32_t)length);
+    qemu_bh_schedule(linuxlab_text_bh_handle);
+    return 0;
 }

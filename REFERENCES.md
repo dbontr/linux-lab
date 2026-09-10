@@ -10,6 +10,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/Wasm runtime used by the 32-bit backend.
 - [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) — QEMU system emulation compiled to WebAssembly; Linux Lab pins commit `0ef7b4e2814b231705d8371dd7997f5b72e70baf` for the x86-64 backend.
 - [qemu-wasm browser networking example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/networking) — browser-side QEMU socket networking and guest proxy/certificate setup.
+- [QEMU AIO bottom-half API](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/include/block/aio.h) — preallocated `QEMUBH` callbacks and wait-free, thread-safe scheduling used to transfer browser control requests onto QEMU's owning thread without cross-thread allocation.
 - [QEMU](https://www.qemu.org/) — PC machine, x86-64 CPU, IDE/optical disk, VGA, and firmware semantics inherited by the compatibility backend.
 
 ## Browser runtime support
@@ -65,6 +66,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
 - QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
 - QEMU browser Pause is observed at qemu-wasm's translation-block dispatcher and parks executing vCPU pthreads outside the Big QEMU Lock on an aligned WebAssembly atomic wait word; Resume notifies that word directly.
+- Browser-thread control entrypoints do not allocate QEMU objects. Persistent bottom halves are created by the QEMU thread after initialization; page-thread Pause, Resume, and text requests only schedule those objects or copy into fixed shared state before QEMU-owned callbacks perform emulator work.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.

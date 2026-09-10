@@ -257,9 +257,13 @@ async function handleControl(request) {
       qemuModule.ccall('linuxlab_resume', null, [], [])
       await waitForRunState(true)
       return
-    case 'send-text':
-      qemuModule.ccall('linuxlab_send_text', null, ['string'], [String(request.text ?? '')])
+    case 'send-text': {
+      const result = qemuModule.ccall('linuxlab_send_text', 'number', ['string'], [String(request.text ?? '')])
+      if (result === -2) throw new Error('QEMU text command is too long')
+      if (result === -3) throw new Error('QEMU text input is busy')
+      if (result !== 0) throw new Error('QEMU text input is unavailable')
       return
+    }
     default:
       throw new Error(`Unknown QEMU control action: ${String(request.action)}`)
   }
