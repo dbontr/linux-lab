@@ -38,7 +38,7 @@ cp "$SCRIPT_DIR/linuxlab-onedrive.c" "$SOURCE_DIR/hw/9pfs/linuxlab-onedrive.c"
 node "$SCRIPT_DIR/patch-onedrive.mjs" "$SOURCE_DIR/hw/9pfs/meson.build"
 cp "$SCRIPT_DIR/linuxlab-control.c" "$SOURCE_DIR/system/linuxlab-control.c"
 node "$SCRIPT_DIR/patch-control.mjs" "$SOURCE_DIR/system/meson.build" "$SOURCE_DIR/system/main.c"
-node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c"
+node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c" "$SOURCE_DIR/ui/sdl2-2d.c"
 
 mkdir -p "$NETWORK_WORK_DIR" "$NETWORK_OUTPUT_DIR"
 cp "$NETWORK_SOURCE_DIR/stack.js" "$NETWORK_WORK_DIR/stack.js"
