@@ -224,7 +224,6 @@ const baseUrl = `http://127.0.0.1:${port}${pagePath}`
 const browser = await chromium.launch({
   executablePath: browserExecutable(),
   headless: true,
-  args: ['--disable-gpu'],
 })
 
 try {
