@@ -136,3 +136,17 @@ test('QEMU SDL sessions disable the unused guest serial console', () => {
   assert.notEqual(serial, -1)
   assert.deepEqual(Array.from(args.slice(serial, serial + 2)), ['-serial', 'none'])
 })
+
+test('OneDrive tokens cross the QEMU C control boundary', () => {
+  const context = loadHost()
+  context.tokenCalls = []
+  context.tokenModule = { ccall: (...args) => { context.tokenCalls.push(args); return 0 } }
+  vm.runInContext("setOneDriveToken(tokenModule, 'test-access-token')", context)
+  assert.deepEqual(JSON.parse(JSON.stringify(context.tokenCalls[0])), ['linuxlab_set_onedrive_token', 'number', ['string'], ['test-access-token']])
+})
+
+test('OneDrive token channel rejects oversized-token failures', () => {
+  const context = loadHost()
+  context.tokenModule = { ccall: () => -1 }
+  assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
+})

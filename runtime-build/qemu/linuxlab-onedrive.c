@@ -1,6 +1,7 @@
 /* OneDrive-backed virtio-9P adapter for Linux Lab QEMU-Wasm. */
 #include "qemu/osdep.h"
 #include "qemu/iov.h"
+#include "qemu/atomic.h"
 #include "qemu/module.h"
 #include "fsdev/qemu-fsdev.h"
 #include "9p.h"
@@ -10,6 +11,28 @@
 #define LINUXLAB_ONEDRIVE_ROOT "/linuxlab-onedrive"
 
 static FileOperations linuxlab_local_ops;
+
+#define LINUXLAB_TOKEN_CAPACITY 16384
+static char linuxlab_tokens[2][LINUXLAB_TOKEN_CAPACITY];
+static int linuxlab_token_slot;
+
+EMSCRIPTEN_KEEPALIVE int linuxlab_set_onedrive_token(const char *token)
+{
+    size_t length;
+    int next;
+    if (!token) token = "";
+    length = strlen(token);
+    if (length >= LINUXLAB_TOKEN_CAPACITY) return -1;
+    next = 1 - (qatomic_read(&linuxlab_token_slot) & 1);
+    memcpy(linuxlab_tokens[next], token, length + 1);
+    qatomic_set(&linuxlab_token_slot, next);
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *linuxlab_get_onedrive_token(void)
+{
+    return linuxlab_tokens[qatomic_read(&linuxlab_token_slot) & 1];
+}
 
 EM_JS(int, linuxlab_od_ensure, (const char *path), {
     return Module['linuxLabOneDriveBridge'].ensurePath(UTF8ToString(path));

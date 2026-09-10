@@ -1,5 +1,4 @@
 var LINUXLAB_ONEDRIVE_ROOT = '/linuxlab-onedrive';
-var LINUXLAB_TOKEN_PATH = '/.linuxlab/onedrive-token';
 
 Module['preRun'] = Module['preRun'] || [];
 Module['preRun'].push(function () {
@@ -9,19 +8,8 @@ Module['preRun'].push(function () {
     FS.writeFile('/.wasmenv/proxy.crt', certificate);
   }
 
-  var token = Module['linuxLabOneDriveToken'];
-  if (token) {
-    ensureDirectories('/.linuxlab');
-    ensureDirectories(LINUXLAB_ONEDRIVE_ROOT);
-    FS.writeFile(LINUXLAB_TOKEN_PATH, token, { encoding: 'utf8' });
-  }
 });
 
-Module['linuxLabSetOneDriveToken'] = function (token) {
-  if (!token) return;
-  ensureDirectories('/.linuxlab');
-  FS.writeFile(LINUXLAB_TOKEN_PATH, token, { encoding: 'utf8' });
-};
 
 function ensureDirectories(path) {
   var current = '';
@@ -81,7 +69,10 @@ Module['linuxLabOneDriveBridge'] = (function () {
 
   function token() {
     try {
-      return String(FS.readFile(LINUXLAB_TOKEN_PATH, { encoding: 'utf8' })).trim();
+      var getter = Module['_linuxlab_get_onedrive_token'];
+      if (typeof getter !== 'function') return '';
+      var address = getter();
+      return address ? UTF8ToString(address).trim() : '';
     } catch (_) {
       return '';
     }

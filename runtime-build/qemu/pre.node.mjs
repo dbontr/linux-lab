@@ -25,13 +25,9 @@ function createBridge(handler) {
   }
   const heap = new Uint8Array(64)
   const context = vm.createContext({
-    Module: { preRun: [] },
-    FS: {
-      readFile: (path) => {
-        if (path === '/.linuxlab/onedrive-token') return 'test-token'
-        throw new Error(`unexpected read: ${path}`)
-      },
-    },
+    Module: { preRun: [], _linuxlab_get_onedrive_token: () => 1 },
+    FS: {},
+    UTF8ToString: (address) => address === 1 ? 'test-token' : '',
     HEAPU8: heap,
     XMLHttpRequest: FakeXHR,
     console: { error() {}, log() {}, warn() {} },

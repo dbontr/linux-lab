@@ -151,6 +151,12 @@ async function startNetworkBridge() {
   })
 }
 
+function setOneDriveToken(module, token) {
+  if (!token) return
+  const result = module.ccall('linuxlab_set_onedrive_token', 'number', ['string'], [token])
+  if (result !== 0) throw new Error('OneDrive access token is too large for the QEMU bridge')
+}
+
 async function boot(request) {
   if (bootStarted) throw new Error('The VM has already started')
   bootStarted = true
@@ -185,7 +191,6 @@ async function boot(request) {
     canvas: screen,
     pty: createHeadlessPty(),
     linuxLabNetworkCert: networkCertificate,
-    linuxLabOneDriveToken: storageEnabled ? request.oneDriveToken : null,
     mainScriptUrlOrBlob: asset('out.js'),
     locateFile: (name) => asset(name),
     print: appendLog,
@@ -193,6 +198,12 @@ async function boot(request) {
     onRuntimeInitialized: () => {
       appendLog('QEMU WebAssembly runtime initialized.')
       qemuModule = moduleConfig
+      try {
+        if (storageEnabled) setOneDriveToken(moduleConfig, request.oneDriveToken)
+      } catch (error) {
+        reportStartupError(error)
+        return
+      }
       void waitForQemuReady(moduleConfig).then(() => {
         if (startupReported) return
         startupReported = true
@@ -230,8 +241,7 @@ async function waitForQemuReady(module) {
 
 function updateOneDriveToken(token) {
   if (!token || !qemuModule) return
-  const update = qemuModule.linuxLabSetOneDriveToken
-  if (typeof update === 'function') update(token)
+  setOneDriveToken(qemuModule, token)
 }
 
 async function handleControl(request) {
