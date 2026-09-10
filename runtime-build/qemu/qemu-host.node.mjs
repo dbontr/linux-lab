@@ -152,9 +152,14 @@ test('OneDrive token channel rejects oversized-token failures', () => {
   assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
 })
 
-test('QEMU browser pause suspends vCPUs without a global VM stop transition', () => {
-  assert.match(controlSource, /pause_all_vcpus\(\)/)
-  assert.match(controlSource, /resume_all_vcpus\(\)/)
+test('QEMU browser pause suspends vCPUs without global pause machinery', () => {
+  assert.match(controlSource, /cpu_disable_ticks\(\)/)
+  assert.match(controlSource, /cpu->stop = true/)
+  assert.match(controlSource, /qemu_cpu_kick\(cpu\)/)
+  assert.match(controlSource, /cpu_enable_ticks\(\)/)
+  assert.match(controlSource, /cpu_resume\(cpu\)/)
+  assert.doesNotMatch(controlSource, /pause_all_vcpus\(\)/)
+  assert.doesNotMatch(controlSource, /resume_all_vcpus\(\)/)
   assert.doesNotMatch(controlSource, /vm_stop\(/)
   assert.doesNotMatch(controlSource, /vm_start\(/)
 })
