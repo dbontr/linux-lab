@@ -193,6 +193,7 @@ async function smokeQemu(page) {
   await page.locator('[data-custom]').click()
   await page.locator('[data-custom-dialog] input[name=file]').setInputFiles(resolve(repoRoot, 'public', 'distros', 'TinyCore-11.0.iso'))
   await page.locator('[data-custom-submit]').click()
+  await page.locator('[data-boot]').click()
   await waitForStatus(page, 'is running', 90_000)
   await page.locator('[data-session-name]').filter({ hasText: 'TinyCore-11.0.iso' }).waitFor()
   const frame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
