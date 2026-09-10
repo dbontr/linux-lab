@@ -3,7 +3,6 @@
 #include "hw/core/cpu.h"
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
-#include "sysemu/cpu-timers.h"
 #include "sysemu/cpus.h"
 #include "sysemu/runstate.h"
 #include "ui/input.h"
@@ -39,7 +38,20 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
-    return runstate_is_running() && !qatomic_read(&linuxlab_paused) ? 1 : 0;
+    CPUState *cpu;
+
+    if (!runstate_is_running()) {
+        return 0;
+    }
+    if (!qatomic_read(&linuxlab_paused)) {
+        return 1;
+    }
+    CPU_FOREACH(cpu) {
+        if (!cpu->stopped) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void linuxlab_pause_bh(void *opaque)
@@ -51,7 +63,6 @@ static void linuxlab_pause_bh(void *opaque)
         return;
     }
 
-    cpu_disable_ticks();
     qatomic_set(&linuxlab_paused, 1);
     CPU_FOREACH(cpu) {
         cpu->stop = true;
@@ -68,7 +79,6 @@ static void linuxlab_resume_bh(void *opaque)
         return;
     }
 
-    cpu_enable_ticks();
     CPU_FOREACH(cpu) {
         cpu_resume(cpu);
     }
