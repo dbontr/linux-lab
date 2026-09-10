@@ -8,6 +8,7 @@
 #include "ui/input.h"
 
 #include <emscripten/emscripten.h>
+#include <emscripten/threading.h>
 
 typedef struct LinuxLabTextRequest {
     char *text;
@@ -16,6 +17,8 @@ typedef struct LinuxLabTextRequest {
 
 static int linuxlab_ready;
 static int linuxlab_paused;
+static int linuxlab_pause_target;
+static int linuxlab_pause_waiters;
 
 void linuxlab_runtime_prepare(void)
 {
@@ -26,8 +29,28 @@ void linuxlab_runtime_prepare(void)
 
 void linuxlab_runtime_ready(void)
 {
+    qatomic_set(&linuxlab_pause_target, 0);
+    qatomic_set(&linuxlab_pause_waiters, 0);
     qatomic_set(&linuxlab_paused, 0);
     qatomic_set(&linuxlab_ready, 1);
+}
+
+bool linuxlab_pause_requested(void)
+{
+    return qatomic_read(&linuxlab_paused) != 0;
+}
+
+void linuxlab_vcpu_pause_point(void)
+{
+    if (!linuxlab_pause_requested()) {
+        return;
+    }
+
+    qatomic_inc(&linuxlab_pause_waiters);
+    while (qatomic_read(&linuxlab_paused)) {
+        emscripten_futex_wait(&linuxlab_paused, 1, INFINITY);
+    }
+    qatomic_dec(&linuxlab_pause_waiters);
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
@@ -38,51 +61,50 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
-    CPUState *cpu;
-
     if (!runstate_is_running()) {
         return 0;
     }
     if (!qatomic_read(&linuxlab_paused)) {
-        return 1;
+        return qatomic_read(&linuxlab_pause_waiters) == 0;
     }
-    CPU_FOREACH(cpu) {
-        if (!cpu->stopped) {
-            return 1;
-        }
-    }
-    return 0;
+    return qatomic_read(&linuxlab_pause_waiters) <
+        qatomic_read(&linuxlab_pause_target);
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
     CPUState *cpu;
+    int target = 0;
 
     (void)opaque;
     if (!runstate_is_running() || qatomic_read(&linuxlab_paused)) {
         return;
     }
 
+    CPU_FOREACH(cpu) {
+        if (!cpu->halted && !cpu->stopped) {
+            target++;
+        }
+    }
+    qatomic_set(&linuxlab_pause_target, target);
     qatomic_set(&linuxlab_paused, 1);
     CPU_FOREACH(cpu) {
-        cpu->stop = true;
-        qemu_cpu_kick(cpu);
+        if (!cpu->halted && !cpu->stopped) {
+            cpu_exit(cpu);
+        }
     }
 }
 
 static void linuxlab_resume_bh(void *opaque)
 {
-    CPUState *cpu;
-
     (void)opaque;
     if (!runstate_is_running() || !qatomic_read(&linuxlab_paused)) {
         return;
     }
 
-    CPU_FOREACH(cpu) {
-        cpu_resume(cpu);
-    }
     qatomic_set(&linuxlab_paused, 0);
+    emscripten_futex_wake(&linuxlab_paused, INT_MAX);
+    qatomic_set(&linuxlab_pause_target, 0);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {

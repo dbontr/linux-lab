@@ -18,6 +18,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
 - [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread and WebAssembly runtime settings used by the QEMU browser build.
+- [Emscripten 3.1.50 threading API](https://github.com/emscripten-core/emscripten/blob/3.1.50/system/include/emscripten/threading.h) — futex wait/wake contract used to park QEMU MTTCG vCPUs outside the Big QEMU Lock on an aligned shared-memory pause word.
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
 - [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS`, exported C functions, and `ccall` used by the QEMU media, OneDrive, and control bridges.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
@@ -63,6 +64,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - Local ISO/IMG uploads remain browser `File` objects. QEMU reads them through a read-only `linuxlab:` block protocol backed by ranged reads from a same-origin `blob:` URL, so large source media is not duplicated into Wasm memory before boot.
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
 - QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
+- QEMU browser Pause interrupts active TCG execution and parks MTTCG vCPUs outside the Big QEMU Lock on an aligned Emscripten futex word; Resume wakes that word directly.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.
