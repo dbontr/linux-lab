@@ -7,7 +7,6 @@
 #include "sysemu/runstate.h"
 #include "ui/input.h"
 
-#include <emscripten/atomic.h>
 #include <emscripten/emscripten.h>
 
 #define LINUXLAB_TEXT_CAPACITY 4096
@@ -58,11 +57,7 @@ void linuxlab_vcpu_pause_wait(void)
 
     qatomic_inc(&linuxlab_pause_waiters);
     while (linuxlab_pause_requested()) {
-        emscripten_atomic_wait_u32(
-            &linuxlab_paused,
-            1,
-            ATOMICS_WAIT_DURATION_INFINITE
-        );
+        emscripten_sleep(1);
     }
     qatomic_dec(&linuxlab_pause_waiters);
 }
@@ -111,7 +106,6 @@ static void linuxlab_resume_bh(void *opaque)
     }
 
     qatomic_store_release(&linuxlab_paused, 0);
-    emscripten_atomic_notify(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {

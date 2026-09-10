@@ -171,7 +171,7 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-test('QEMU browser controls exit TCG before parking the vCPU thread', () => {
+test('QEMU browser controls exit TCG before yielding the vCPU thread', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_text_bh, NULL\)/)
@@ -180,9 +180,9 @@ test('QEMU browser controls exit TCG before parking the vCPU thread', () => {
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_text_bh_handle\)/)
   assert.doesNotMatch(controlSource, /aio_bh_schedule_oneshot/)
   assert.doesNotMatch(controlSource, /g_new|g_strdup|g_free/)
-  assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
-  assert.match(controlSource, /emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)
-  assert.doesNotMatch(controlSource, /emscripten_sleep\(/)
+  assert.match(controlSource, /emscripten_sleep\(1\)/)
+  assert.match(buildSource, /-sASYNCIFY=1/)
+  assert.doesNotMatch(controlSource, /emscripten_atomic_wait_u32\(|emscripten_atomic_notify\(/)
   assert.match(controlSource, /qatomic_read\(&cpu->running\)/)
   assert.match(controlPatchSource, /const cpuExecPath = process\.argv\[4\]/)
   assert.match(controlPatchSource, /const mttcgPath = process\.argv\[5\]/)
