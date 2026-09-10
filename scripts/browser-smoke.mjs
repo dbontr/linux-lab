@@ -173,11 +173,27 @@ async function smokeV86(page, pageErrors) {
 }
 
 async function smokeQemu(page) {
+  const graphRequests = []
+  await page.route('https://graph.microsoft.com/**', async (route) => {
+    const request = route.request()
+    const headers = await request.allHeaders()
+    graphRequests.push({ method: request.method(), url: request.url(), authorization: headers.authorization ?? '' })
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, range', 'access-control-allow-methods': 'GET, PUT, POST, PATCH, DELETE, OPTIONS' }
+    if (request.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: cors }); return }
+    const url = new URL(request.url())
+    if (request.method() === 'GET' && url.pathname === '/v1.0/me/drive/root') {
+      await route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'smoke-root', name: 'root', size: 0, folder: { childCount: 0 }, lastModifiedDateTime: '2026-01-01T00:00:00Z' }) })
+      return
+    }
+    if (request.method() === 'GET' && url.pathname === '/v1.0/me/drive/root/children') { await route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ value: [] }) }); return }
+    await route.fulfill({ status: 404, headers: { ...cors, 'content-type': 'application/json' }, body: '{}' })
+  })
   await seedOneDriveSession(page)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').nth(1).click()
   await page.locator('[data-boot]').click()
   await waitForStatus(page, 'OneDrive bridge attached', 90_000)
+  assert(graphRequests.some((request) => request.method === 'GET' && request.url.endsWith('/v1.0/me/drive/root') && request.authorization === 'Bearer linux-lab-browser-smoke-token'), 'QEMU OneDrive bridge did not authenticate its Graph root probe')
   assert.equal(await page.locator('iframe.qemu-frame').count(), 1)
   await page.locator('[data-pause]').click()
   await waitForStatus(page, 'is stopped', 10_000)
