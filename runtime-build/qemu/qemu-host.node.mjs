@@ -7,6 +7,7 @@ const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
+const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
 
 function loadHost() {
   const screen = { focus() {} }
@@ -164,6 +165,12 @@ test('OneDrive token channel rejects oversized-token failures', () => {
   assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
 })
 
+test('QEMU build uses the integrity-first allocator consistently', () => {
+  assert.match(buildSource, /-sMALLOC=dlmalloc/)
+  assert.doesNotMatch(buildSource, /-sMALLOC=mimalloc/)
+  assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
+  assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
+})
 test('QEMU browser controls cross threads without allocating on the page thread', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)

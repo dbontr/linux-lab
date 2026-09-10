@@ -65,6 +65,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - Local ISO/IMG uploads remain browser `File` objects. QEMU reads them through a read-only `linuxlab:` block protocol backed by ranged reads from a same-origin `blob:` URL, so large source media is not duplicated into Wasm memory before boot.
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
 - QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
+- QEMU browser builds use Emscripten `dlmalloc` so allocator integrity and predictable threaded I/O behavior take priority over allocator-level contention scaling.
 - QEMU browser Pause is observed at qemu-wasm's translation-block dispatcher. While paused, executing vCPU workers cooperatively yield through Asyncify without mutating QEMU CPU state or entering a hard pthread/futex wait; Resume clears the shared pause flag.
 - Browser-thread control entrypoints do not allocate QEMU objects. Persistent bottom halves are created by the QEMU thread after initialization; page-thread Pause, Resume, and text requests only schedule those objects or copy into fixed shared state before QEMU-owned callbacks perform emulator work.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
