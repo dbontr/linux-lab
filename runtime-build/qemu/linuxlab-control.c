@@ -96,7 +96,7 @@ static void linuxlab_pause_bh(void *opaque)
     qatomic_store_release(&linuxlab_paused, 1);
     CPU_FOREACH(cpu) {
         cpu->stop = true;
-        qemu_cpu_kick(cpu);
+        cpu_exit(cpu);
     }
 }
 

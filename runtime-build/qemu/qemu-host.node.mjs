@@ -176,7 +176,7 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
 
-test('QEMU browser pause uses native vCPU stop and kick semantics', () => {
+test('QEMU browser pause requests a native TB exit without kicking the active vCPU', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_pause_bh_handle\)/)
@@ -185,7 +185,8 @@ test('QEMU browser pause uses native vCPU stop and kick semantics', () => {
   assert.match(controlSource, /cpu_enable_ticks\(\)/)
   assert.match(controlSource, /CPU_FOREACH\(cpu\)/)
   assert.match(controlSource, /cpu->stop = true/)
-  assert.match(controlSource, /qemu_cpu_kick\(cpu\)/)
+  assert.match(controlSource, /cpu_exit\(cpu\)/)
+  assert.doesNotMatch(controlSource, /qemu_cpu_kick\(cpu\)/)
   assert.match(controlSource, /qatomic_read\(&cpu->stopped\)/)
   assert.match(controlSource, /cpu_resume\(cpu\)/)
   assert.match(controlSource, /linuxlab_virtual_clock_ns/)
