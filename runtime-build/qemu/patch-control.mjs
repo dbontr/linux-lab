@@ -69,7 +69,7 @@ if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(tc
 if (wasm32Source.includes('bool linuxlab_pause_requested(void);')) {
   throw new Error('Linux Lab TCI pause guard is already registered')
 }
-const tciPauseGuard = `${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                ctx.tb_ptr = 0;${wasm32Eol}                return 0;${wasm32Eol}            }`
+const tciPauseGuard = `${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                uintptr_t pause_tb = (uintptr_t)ctx.tb_ptr;${wasm32Eol}                ctx.tb_ptr = 0;${wasm32Eol}                return pause_tb;${wasm32Eol}            }`
 let patchedWasm32 = wasm32Source.replace(
   wasm32DeclarationAnchor,
   `${wasm32DeclarationAnchor}${wasm32Eol}bool linuxlab_pause_requested(void);${wasm32Eol}`,
@@ -110,12 +110,12 @@ let patchedWasm = wasmSource.replace(
 patchedWasm = patchedWasm.replace(exitFunctionAnchor, `${pauseEmitter}${exitFunctionAnchor}`)
 patchedWasm = patchedWasm.replace(
   gotoPtrAnchor,
-  `${gotoPtrAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_i32_const(s, 0);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
+  `${gotoPtrAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);${wasmEol}    tcg_wasm_out_op_local_set(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
 )
 
 patchedWasm = patchedWasm.replace(
   gotoTbAnchor,
-  `${gotoTbAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_i32_const(s, 0);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
+  `${gotoTbAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);${wasmEol}    tcg_wasm_out_op_local_set(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
 )
 
 await writeFile(wasmTargetPath, patchedWasm, 'utf8')
