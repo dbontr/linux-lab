@@ -38,6 +38,8 @@ test('QEMU boot arguments expose browser networking and OneDrive 9P', () => {
   )
 
   assert.equal(args[args.indexOf('-m') + 1], '512M')
+  assert.equal(args[args.indexOf('-smp') + 1], '1')
+  assert.equal(args[args.indexOf('-accel') + 1], 'tcg,thread=single,tb-size=500')
   assert(args.includes('socket,id=vmnic,connect=localhost:8888'))
   assert(args.includes('local,path=/.wasmenv,mount_tag=wasm0,security_model=passthrough,id=wasm0'))
   assert(args.includes('local,path=/linuxlab-onedrive,mount_tag=host9p,security_model=none,id=onedrive'))
