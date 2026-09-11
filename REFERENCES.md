@@ -67,7 +67,8 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
 - QEMU browser builds use Emscripten `dlmalloc` so allocator integrity and predictable threaded I/O behavior take priority over allocator-level contention scaling.
 - QEMU browser Pause is observed at qemu-wasm's translation-block dispatcher. While paused, executing vCPU workers cooperatively yield through Asyncify without mutating QEMU CPU state or entering a hard pthread/futex wait; Resume clears the shared pause flag.
-- Browser-thread control entrypoints do not allocate QEMU objects. Persistent bottom halves are created by the QEMU thread after initialization; page-thread Pause, Resume, and text requests only schedule those objects or copy into fixed shared state before QEMU-owned callbacks perform emulator work.
+- Browser Pause and Resume write only a shared atomic flag that qemu-wasm observes between translation blocks. Keyboard text remains routed through a persistent QEMU bottom half because input-device mutation belongs to QEMU's owning thread.
+- The QEMU browser profile uses one vCPU. Pause acknowledgement is the shared pause-waiter count, so browser status checks do not traverse QEMU CPU objects across threads.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.

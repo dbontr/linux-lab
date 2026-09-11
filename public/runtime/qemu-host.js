@@ -79,6 +79,7 @@ function bootArguments(mediaSource, kind, requestedMemory, firmware, networkEnab
     '-m', `${memory}M`,
     '-accel', 'tcg,tb-size=500',
     '-cpu', 'max',
+    '-smp', '1',
     '-machine', 'pc',
     '-L', '/pack',
     '-display', 'sdl,gl=off',
