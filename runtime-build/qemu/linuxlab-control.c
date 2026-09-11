@@ -1,11 +1,14 @@
 /* Linux Lab browser controls for the QEMU-Wasm runtime. */
 #include "qemu/osdep.h"
+#include "hw/core/cpu.h"
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
 #include "sysemu/cpu-timers.h"
+#include "sysemu/cpus.h"
 #include "sysemu/runstate.h"
 #include "ui/input.h"
 
+#include <emscripten/atomic.h>
 #include <emscripten/emscripten.h>
 
 #define LINUXLAB_TEXT_CAPACITY 4096
@@ -53,6 +56,28 @@ uintptr_t linuxlab_pause_word_address(void)
     return (uintptr_t)&linuxlab_paused;
 }
 
+uintptr_t linuxlab_pause_waiting_word_address(void)
+{
+    return (uintptr_t)&linuxlab_pause_waiting;
+}
+
+void linuxlab_vcpu_pause_wait(void)
+{
+    if (!linuxlab_pause_requested()) {
+        return;
+    }
+
+    qatomic_store_release(&linuxlab_pause_waiting, 1);
+    while (linuxlab_pause_requested()) {
+        emscripten_atomic_wait_u32(
+            &linuxlab_paused,
+            1,
+            ATOMICS_WAIT_DURATION_INFINITE
+        );
+    }
+    qatomic_store_release(&linuxlab_pause_waiting, 0);
+}
+
 
 EMSCRIPTEN_KEEPALIVE double linuxlab_virtual_clock_ns(void)
 {
@@ -70,22 +95,23 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
         && !linuxlab_pause_requested();
 }
 
-void linuxlab_pause_waiting_set(bool waiting)
-{
-    qatomic_store_release(&linuxlab_pause_waiting, waiting ? 1 : 0);
-}
-
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
+    CPUState *cpu;
+
     if (!runstate_is_running()) {
         return 0;
     }
     if (!linuxlab_pause_requested()) {
         return 1;
     }
-    return qatomic_load_acquire(&linuxlab_pause_waiting) == 0;
-}
+    if (qatomic_load_acquire(&linuxlab_pause_waiting)) {
+        return 0;
+    }
 
+    cpu = first_cpu;
+    return cpu && qatomic_read(&cpu->running);
+}
 static void linuxlab_pause_bh(void *opaque)
 {
     (void)opaque;
@@ -106,6 +132,7 @@ static void linuxlab_resume_bh(void *opaque)
 
     cpu_enable_ticks();
     qatomic_store_release(&linuxlab_paused, 0);
+    emscripten_atomic_notify(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {

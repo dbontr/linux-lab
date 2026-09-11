@@ -40,30 +40,25 @@ await writeFile(mainPath, patchedMain, 'utf8')
 const wasm32Source = await readFile(wasm32Path, 'utf8')
 const wasm32Eol = wasm32Source.includes('\r\n') ? '\r\n' : '\n'
 const wasm32DeclarationAnchor = `#include "wasm32.h"${wasm32Eol}`
-const trysleepAnchor = `static inline void trysleep()${wasm32Eol}{${wasm32Eol}    if (--exec_cnt == 0) {`
 const tciGotoTbAnchor = `        case INDEX_op_goto_tb:${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);${wasm32Eol}            if (*(uint32_t **)ptr != 0) {${wasm32Eol}                tb_ptr = *(uint32_t **)ptr;${wasm32Eol}                ctx.tb_ptr = tb_ptr;`
 const tciGotoPtrAnchor = `            tb_ptr = ptr;${wasm32Eol}${wasm32Eol}            ctx.tb_ptr = tb_ptr;`
-if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(trysleepAnchor) || !wasm32Source.includes(tciGotoTbAnchor) || !wasm32Source.includes(tciGotoPtrAnchor)) {
-  throw new Error('QEMU Wasm dispatcher pause anchors changed')
+if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(tciGotoTbAnchor) || !wasm32Source.includes(tciGotoPtrAnchor)) {
+  throw new Error('QEMU Wasm TCI pause anchors changed')
 }
-if (wasm32Source.includes('bool linuxlab_pause_requested(void);')) {
-  throw new Error('Linux Lab dispatcher pause hook is already registered')
+if (wasm32Source.includes('void linuxlab_vcpu_pause_wait(void);')) {
+  throw new Error('Linux Lab TCI pause hook is already registered')
 }
 let patchedWasm32 = wasm32Source.replace(
   wasm32DeclarationAnchor,
-  `${wasm32DeclarationAnchor}${wasm32Eol}bool linuxlab_pause_requested(void);${wasm32Eol}void linuxlab_pause_waiting_set(bool waiting);${wasm32Eol}`,
-)
-patchedWasm32 = patchedWasm32.replace(
-  trysleepAnchor,
-  `static inline void trysleep()${wasm32Eol}{${wasm32Eol}    if (linuxlab_pause_requested()) {${wasm32Eol}        linuxlab_pause_waiting_set(true);${wasm32Eol}        while (linuxlab_pause_requested()) {${wasm32Eol}            emscripten_sleep(1);${wasm32Eol}        }${wasm32Eol}        linuxlab_pause_waiting_set(false);${wasm32Eol}    }${wasm32Eol}    if (--exec_cnt == 0) {`,
+  `${wasm32DeclarationAnchor}${wasm32Eol}void linuxlab_vcpu_pause_wait(void);${wasm32Eol}`,
 )
 patchedWasm32 = patchedWasm32.replace(
   tciGotoTbAnchor,
-  `${tciGotoTbAnchor}${wasm32Eol}                if (linuxlab_pause_requested()) {${wasm32Eol}                    return 0;${wasm32Eol}                }`,
+  `${tciGotoTbAnchor}${wasm32Eol}                linuxlab_vcpu_pause_wait();`,
 )
 patchedWasm32 = patchedWasm32.replace(
   tciGotoPtrAnchor,
-  `${tciGotoPtrAnchor}${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                return 0;${wasm32Eol}            }`,
+  `${tciGotoPtrAnchor}${wasm32Eol}            linuxlab_vcpu_pause_wait();`,
 )
 await writeFile(wasm32Path, patchedWasm32, 'utf8')
 
@@ -80,20 +75,64 @@ if (wasmSource.includes('linuxlab_pause_word_address')) {
 }
 
 const pauseEmitter = [
-  'static void tcg_wasm_out_pause_requested(TCGContext *s)',
+  'static void tcg_wasm_out_linuxlab_atomic_prefix(TCGContext *s, uint32_t op)',
+  '{',
+  '    tcg_wasm_out8(s, 0xfe);',
+  '    tcg_wasm_out_leb128_uint32_t(s, op);',
+  '}',
+  '',
+  'static void tcg_wasm_out_linuxlab_atomic_memarg(TCGContext *s)',
+  '{',
+  '    tcg_wasm_out_leb128_uint32_t(s, 2); /* natural i32 alignment */',
+  '    tcg_wasm_out_leb128_uint32_t(s, 0); /* zero offset */',
+  '}',
+  '',
+  'static void tcg_wasm_out_linuxlab_pause_requested(TCGContext *s)',
   '{',
   '    tcg_wasm_out_op_i32_const(s, (int32_t)linuxlab_pause_word_address());',
-  '    tcg_wasm_out8(s, 0xfe); /* i32.atomic.load prefix */',
-  '    tcg_wasm_out8(s, 0x10); /* i32.atomic.load */',
-  '    tcg_wasm_out8(s, 0x02); /* natural i32 alignment */',
-  '    tcg_wasm_out8(s, 0x00); /* zero offset */',
+  '    tcg_wasm_out_linuxlab_atomic_prefix(s, 0x10); /* i32.atomic.load */',
+  '    tcg_wasm_out_linuxlab_atomic_memarg(s);',
+  '}',
+  '',
+  'static void tcg_wasm_out_linuxlab_waiting_store(TCGContext *s, int32_t value)',
+  '{',
+  '    tcg_wasm_out_op_i32_const(s, (int32_t)linuxlab_pause_waiting_word_address());',
+  '    tcg_wasm_out_op_i32_const(s, value);',
+  '    tcg_wasm_out_linuxlab_atomic_prefix(s, 0x17); /* i32.atomic.store */',
+  '    tcg_wasm_out_linuxlab_atomic_memarg(s);',
+  '}',
+  '',
+  'static void tcg_wasm_out_linuxlab_pause_wait(TCGContext *s)',
+  '{',
+  '    tcg_wasm_out_linuxlab_pause_requested(s);',
+  '    tcg_wasm_out_op_if_noret(s);',
+  '    tcg_wasm_out_linuxlab_waiting_store(s, 1);',
+  '    tcg_wasm_out8(s, 0x02); /* block */',
+  '    tcg_wasm_out8(s, 0x40); /* empty block type */',
+  '    tcg_wasm_out8(s, 0x03); /* loop */',
+  '    tcg_wasm_out8(s, 0x40); /* empty block type */',
+  '    tcg_wasm_out_op_i32_const(s, (int32_t)linuxlab_pause_word_address());',
+  '    tcg_wasm_out_op_i32_const(s, 1);',
+  '    tcg_wasm_out_op_i64_const(s, -1);',
+  '    tcg_wasm_out_linuxlab_atomic_prefix(s, 0x01); /* memory.atomic.wait32 */',
+  '    tcg_wasm_out_linuxlab_atomic_memarg(s);',
+  '    tcg_wasm_out8(s, 0x1a); /* drop wait result */',
+  '    tcg_wasm_out_linuxlab_pause_requested(s);',
+  '    tcg_wasm_out_op_i32_eqz(s);',
+  '    tcg_wasm_out8(s, 0x0d); /* br_if */',
+  '    tcg_wasm_out8(s, 0x01); /* leave block */',
+  '    tcg_wasm_out_op_br(s, 0); /* retry after a spurious wake */',
+  '    tcg_wasm_out_op_end(s); /* loop */',
+  '    tcg_wasm_out_op_end(s); /* block */',
+  '    tcg_wasm_out_linuxlab_waiting_store(s, 0);',
+  '    tcg_wasm_out_op_end(s); /* if paused */',
   '}',
   '',
 ].join(wasmEol)
 
 let patchedWasm = wasmSource.replace(
   wasmDeclarationAnchor,
-  `${wasmDeclarationAnchor}${wasmEol}uintptr_t linuxlab_pause_word_address(void);${wasmEol}`,
+  `${wasmDeclarationAnchor}${wasmEol}uintptr_t linuxlab_pause_word_address(void);${wasmEol}uintptr_t linuxlab_pause_waiting_word_address(void);${wasmEol}`,
 )
 patchedWasm = patchedWasm.replace(gotoPtrAnchor, `${pauseEmitter}${gotoPtrAnchor}`)
 
@@ -104,14 +143,7 @@ function guardFastChain(source, functionAnchor, loopBranch) {
   if (start < 0 || end < 0) throw new Error('QEMU Wasm chain function boundary changed')
   const body = source.slice(bodyStart, end)
   if (!body.includes(loopBranch)) throw new Error(`QEMU Wasm loop branch changed: ${loopBranch}`)
-  const pauseReturn = [
-    '    tcg_wasm_out_pause_requested(s);',
-    '    tcg_wasm_out_op_if_noret(s);',
-    '    tcg_wasm_out_op_i32_const(s, 0);',
-    '    tcg_wasm_out_op_return(s);',
-    '    tcg_wasm_out_op_end(s);',
-  ].join(wasmEol)
-  const guardedBody = body.replace(loopBranch, `${pauseReturn}${wasmEol}${loopBranch}`)
+  const guardedBody = body.replace(loopBranch, `    tcg_wasm_out_linuxlab_pause_wait(s);${wasmEol}${loopBranch}`)
   return `${source.slice(0, bodyStart)}${guardedBody}${source.slice(end)}`
 }
 
