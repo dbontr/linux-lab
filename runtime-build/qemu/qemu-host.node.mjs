@@ -169,15 +169,16 @@ test('OneDrive token channel rejects oversized-token failures', () => {
   assert.throws(() => vm.runInContext("setOneDriveToken(tokenModule, 'bad')", context), /too large/)
 })
 
-test('QEMU build uses the integrity-first allocator and Wasm SjLj', () => {
+test('QEMU build uses the integrity-first allocator and scoped Wasm SjLj', () => {
   assert.match(buildSource, /-sMALLOC=dlmalloc/)
   assert.doesNotMatch(buildSource, /-sMALLOC=mimalloc/)
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
-  assert.match(upstreamPatchSource, /-sSUPPORT_LONGJMP=wasm/)
-  assert.match(upstreamPatchSource, /replaceAll\(asyncifySetting/)
-  assert.match(upstreamPatchSource, /replace\(linkerSetting/)
-  assert.doesNotMatch(upstreamPatchSource, /-fwasm-exceptions/)
+  assert.equal((buildSource.match(/-sSUPPORT_LONGJMP=wasm/g) ?? []).length, 2)
+  assert.match(buildSource, /COMMON_FLAGS=.*-sASYNCIFY=1 -sSUPPORT_LONGJMP=wasm/)
+  assert.match(buildSource, /LINK_FLAGS=.*-sSUPPORT_LONGJMP=wasm/)
+  assert.doesNotMatch(upstreamPatchSource, /SUPPORT_LONGJMP/)
+  assert.doesNotMatch(buildSource, /-fwasm-exceptions/)
 })
 
 test('QEMU browser pause uses the native VM stop and resume path', () => {

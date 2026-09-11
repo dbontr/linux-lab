@@ -21,23 +21,8 @@ const allocatorMatches = source.split(allocatorSetting).length - 1
 if (allocatorMatches !== 2) {
   throw new Error(`Expected two upstream mimalloc settings, found ${allocatorMatches}`)
 }
-const asyncifySetting = '-sASYNCIFY=1'
-const asyncifyMatches = source.split(asyncifySetting).length - 1
-if (asyncifyMatches !== 2) {
-  throw new Error(`Expected two upstream Asyncify settings, found ${asyncifyMatches}`)
-}
-const linkerSetting = 'ENV LDFLAGS="-L$TARGET/lib -O2"'
-if (source.split(linkerSetting).length - 1 !== 1) {
-  throw new Error('Expected one upstream linker settings line')
-}
-const wasmSjljSetting = '-sSUPPORT_LONGJMP=wasm'
-if (source.includes(wasmSjljSetting)) {
-  throw new Error('Upstream QEMU build already enables Wasm SjLj')
-}
 
 const patched = source
   .replace(expected, replacement)
   .replaceAll(allocatorSetting, '-sMALLOC=dlmalloc')
-  .replaceAll(asyncifySetting, `${asyncifySetting} ${wasmSjljSetting}`)
-  .replace(linkerSetting, `ENV LDFLAGS="-L$TARGET/lib -O2 ${wasmSjljSetting}"`)
 await writeFile(dockerfile, patched, 'utf8')
