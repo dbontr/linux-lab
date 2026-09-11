@@ -3,9 +3,10 @@ import { readFile, writeFile } from 'node:fs/promises'
 const mesonPath = process.argv[2]
 const mainPath = process.argv[3]
 const cpuExecPath = process.argv[4]
-const wasmTargetPath = process.argv[5]
-if (!mesonPath || !mainPath || !cpuExecPath || !wasmTargetPath) {
-  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c> <accel/tcg/cpu-exec.c> <tcg/wasm32/tcg-target.c.inc>')
+const wasm32Path = process.argv[5]
+const wasmTargetPath = process.argv[6]
+if (!mesonPath || !mainPath || !cpuExecPath || !wasm32Path || !wasmTargetPath) {
+  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c> <accel/tcg/cpu-exec.c> <tcg/wasm32.c> <tcg/wasm32/tcg-target.c.inc>')
 }
 
 const mesonSource = await readFile(mesonPath, 'utf8')
@@ -56,6 +57,26 @@ patchedCpuExec = patchedCpuExec.replace(
   `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${cpuExecEol}            linuxlab_vcpu_pause_wait();${cpuExecEol}            TranslationBlock *tb;`,
 )
 await writeFile(cpuExecPath, patchedCpuExec, 'utf8')
+
+const wasm32Source = await readFile(wasm32Path, 'utf8')
+const wasm32Eol = wasm32Source.includes('\r\n') ? '\r\n' : '\n'
+const wasm32DeclarationAnchor = `#include "wasm32.h"${wasm32Eol}`
+const tciGotoTbAnchor = `        case INDEX_op_goto_tb:${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);`
+const tciGotoPtrAnchor = `        case INDEX_op_goto_ptr:${wasm32Eol}            tci_args_r(insn, &r0);`
+if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(tciGotoTbAnchor) || !wasm32Source.includes(tciGotoPtrAnchor)) {
+  throw new Error('QEMU Wasm TCI pause anchors changed')
+}
+if (wasm32Source.includes('bool linuxlab_pause_requested(void);')) {
+  throw new Error('Linux Lab TCI pause guard is already registered')
+}
+const tciPauseGuard = `${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                ctx.tb_ptr = 0;${wasm32Eol}                return 0;${wasm32Eol}            }`
+let patchedWasm32 = wasm32Source.replace(
+  wasm32DeclarationAnchor,
+  `${wasm32DeclarationAnchor}${wasm32Eol}bool linuxlab_pause_requested(void);${wasm32Eol}`,
+)
+patchedWasm32 = patchedWasm32.replace(tciGotoTbAnchor, `        case INDEX_op_goto_tb:${tciPauseGuard}${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);`)
+patchedWasm32 = patchedWasm32.replace(tciGotoPtrAnchor, `        case INDEX_op_goto_ptr:${tciPauseGuard}${wasm32Eol}            tci_args_r(insn, &r0);`)
+await writeFile(wasm32Path, patchedWasm32, 'utf8')
 
 const wasmSource = await readFile(wasmTargetPath, 'utf8')
 const wasmEol = wasmSource.includes('\r\n') ? '\r\n' : '\n'
