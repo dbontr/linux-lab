@@ -38,6 +38,7 @@ test('QEMU boot arguments expose browser networking and OneDrive 9P', () => {
   )
 
   assert.equal(args[args.indexOf('-m') + 1], '512M')
+  assert.equal(args[args.indexOf('-smp') + 1], '1')
   assert(args.includes('socket,id=vmnic,connect=localhost:8888'))
   assert(args.includes('local,path=/.wasmenv,mount_tag=wasm0,security_model=passthrough,id=wasm0'))
   assert(args.includes('local,path=/linuxlab-onedrive,mount_tag=host9p,security_model=none,id=onedrive'))
@@ -171,13 +172,17 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-test('QEMU browser pause parks the vCPU without Asyncify and preserves guest clocks', () => {
+
+test('QEMU browser pause exits linked TCG, parks the vCPU, and preserves guest clocks', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_text_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_pause_bh_handle\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_resume_bh_handle\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_text_bh_handle\)/)
+  assert.match(controlSource, /cpu = first_cpu;/)
+  assert.match(controlSource, /cpu_exit\(cpu\)/)
+  assert.doesNotMatch(controlSource, /CPU_FOREACH|cpu->running/)
   assert.match(controlSource, /emscripten_thread_sleep\(1\)/)
   assert.match(controlSource, /cpu_disable_ticks\(\)/)
   assert.match(controlSource, /cpu_enable_ticks\(\)/)

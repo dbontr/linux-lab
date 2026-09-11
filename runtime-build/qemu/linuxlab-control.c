@@ -82,26 +82,16 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
-    CPUState *cpu;
-    int running = 0;
-
     if (!runstate_is_running()) {
         return 0;
     }
-    if (!linuxlab_pause_requested()) {
-        return qatomic_read(&linuxlab_pause_waiters) == 0;
-    }
-
-    CPU_FOREACH(cpu) {
-        if (qatomic_read(&cpu->running)) {
-            running++;
-        }
-    }
-    return running > qatomic_read(&linuxlab_pause_waiters);
+    return qatomic_read(&linuxlab_pause_waiters) == 0;
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
+    CPUState *cpu;
+
     (void)opaque;
     if (!runstate_is_running() || linuxlab_pause_requested()) {
         return;
@@ -109,6 +99,10 @@ static void linuxlab_pause_bh(void *opaque)
 
     cpu_disable_ticks();
     qatomic_store_release(&linuxlab_paused, 1);
+    cpu = first_cpu;
+    if (cpu) {
+        cpu_exit(cpu);
+    }
 }
 
 static void linuxlab_resume_bh(void *opaque)
