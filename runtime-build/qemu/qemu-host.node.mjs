@@ -174,6 +174,7 @@ test('QEMU build uses the integrity-first allocator and scoped Wasm SjLj', () =>
   assert.doesNotMatch(buildSource, /-sMALLOC=mimalloc/)
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
+  assert.match(upstreamPatchSource, /ARG EMSDK_VERSION_QEMU=6\.0\.9/)
   assert.equal((buildSource.match(/-sSUPPORT_LONGJMP=wasm/g) ?? []).length, 2)
   assert.match(buildSource, /COMMON_FLAGS=.*-sASYNCIFY=1 -sSUPPORT_LONGJMP=wasm/)
   assert.match(buildSource, /LINK_FLAGS=.*-sSUPPORT_LONGJMP=wasm/)
