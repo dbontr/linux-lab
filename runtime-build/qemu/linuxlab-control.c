@@ -82,7 +82,7 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
     }
 
     cpu = first_cpu;
-    return cpu && !cpu->stopped;
+    return cpu && !qatomic_read(&cpu->stopped);
 }
 
 static void linuxlab_pause_bh(void *opaque)

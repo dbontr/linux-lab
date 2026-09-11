@@ -186,7 +186,7 @@ test('QEMU browser pause uses native vCPU stop state after cooperative TB-chain 
   assert.match(controlSource, /cpu_enable_ticks\(\)/)
   assert.match(controlSource, /cpu = first_cpu/)
   assert.match(controlSource, /cpu->stop = true/)
-  assert.match(controlSource, /cpu && !cpu->stopped/)
+  assert.match(controlSource, /qatomic_read\(&cpu->stopped\)/)
   assert.match(controlSource, /cpu_resume\(cpu\)/)
   assert.match(controlSource, /linuxlab_virtual_clock_ns/)
   assert.match(controlSource, /linuxlab_elapsed_ticks/)
