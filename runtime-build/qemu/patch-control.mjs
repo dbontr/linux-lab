@@ -2,8 +2,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 
 const mesonPath = process.argv[2]
 const mainPath = process.argv[3]
-if (!mesonPath || !mainPath) {
-  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c>')
+const wasm32Path = process.argv[4]
+if (!mesonPath || !mainPath || !wasm32Path) {
+  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c> <tcg/wasm32.c>')
 }
 
 const mesonSource = await readFile(mesonPath, 'utf8')
@@ -28,3 +29,23 @@ if (!mainSource.includes(prototypeAnchor) || !mainSource.includes(callAnchor)) {
 let patched = mainSource.replace(prototypeAnchor, `${eol}void linuxlab_runtime_prepare(void);${eol}void linuxlab_runtime_ready(void);${eol}${eol}int qemu_default_main(void)`)
 patched = patched.replace(callAnchor, `    linuxlab_runtime_prepare();${eol}    qemu_init(argc, argv);${eol}    linuxlab_runtime_ready();${eol}    return qemu_main();`)
 await writeFile(mainPath, patched, 'utf8')
+
+const wasm32Source = await readFile(wasm32Path, 'utf8')
+const wasm32Eol = wasm32Source.includes('\r\n') ? '\r\n' : '\n'
+const declarationAnchor = `#include "wasm32.h"${wasm32Eol}`
+const loopAnchor = `    while (true) {${wasm32Eol}        trysleep();`
+if (!wasm32Source.includes(declarationAnchor) || !wasm32Source.includes(loopAnchor)) {
+  throw new Error('QEMU Wasm TB dispatcher pause anchors changed')
+}
+if (wasm32Source.includes('linuxlab_vcpu_pause_point')) {
+  throw new Error('Linux Lab Wasm pause point is already registered')
+}
+let patchedWasm32 = wasm32Source.replace(
+  declarationAnchor,
+  `${declarationAnchor}${wasm32Eol}void linuxlab_vcpu_pause_point(void);${wasm32Eol}`,
+)
+patchedWasm32 = patchedWasm32.replace(
+  loopAnchor,
+  `    while (true) {${wasm32Eol}        linuxlab_vcpu_pause_point();${wasm32Eol}        trysleep();`,
+)
+await writeFile(wasm32Path, patchedWasm32, 'utf8')
