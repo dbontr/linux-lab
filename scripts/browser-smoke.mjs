@@ -134,7 +134,24 @@ async function waitForStatus(page, pattern, timeout = 60_000) {
     const notice = await page.locator('[data-notice]').textContent().catch(() => null)
     const frame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
     const qemuLog = frame ? await frame.locator('#log').textContent().catch(() => null) : null
-    console.error('Linux Lab browser smoke diagnostics:', { status, notice, qemuLog })
+    const qemuState = frame ? await frame.evaluate(() => {
+      const call = (name) => {
+        try {
+          return typeof window.Module?.ccall === 'function'
+            ? window.Module.ccall(name, 'number', [], [])
+            : null
+        } catch (stateError) {
+          return `error: ${stateError instanceof Error ? stateError.message : String(stateError)}`
+        }
+      }
+      return {
+        ready: call('linuxlab_is_ready'),
+        running: call('linuxlab_is_running'),
+        virtualNs: call('linuxlab_virtual_clock_ns'),
+        elapsedTicks: call('linuxlab_elapsed_ticks'),
+      }
+    }).catch(() => null) : null
+    console.error('Linux Lab browser smoke diagnostics:', { status, notice, qemuLog, qemuState })
     throw error
   }
 }
@@ -263,7 +280,15 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const pageErrors = []
-  page.on('pageerror', (error) => { pageErrors.push(error); console.error('Browser page error:', error.stack ?? error.message) })
+  page.on('pageerror', (error) => {
+    pageErrors.push(error)
+    console.error('Browser page error:', {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+      string: String(error),
+    })
+  })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').first().waitFor({ timeout: 10_000 })
   assert.equal(await page.evaluate(() => crossOriginIsolated), true)
