@@ -51,6 +51,11 @@ bool linuxlab_pause_requested(void)
     return qatomic_load_acquire(&linuxlab_paused) != 0;
 }
 
+uintptr_t linuxlab_pause_word_address(void)
+{
+    return (uintptr_t)&linuxlab_paused;
+}
+
 void linuxlab_vcpu_pause_wait(void)
 {
     if (!linuxlab_pause_requested()) {
