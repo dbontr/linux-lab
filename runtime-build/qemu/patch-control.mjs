@@ -69,13 +69,18 @@ if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(tc
 if (wasm32Source.includes('bool linuxlab_pause_requested(void);')) {
   throw new Error('Linux Lab TCI pause guard is already registered')
 }
-const tciPauseGuard = `${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                uintptr_t pause_tb = (uintptr_t)ctx.tb_ptr;${wasm32Eol}                ctx.tb_ptr = 0;${wasm32Eol}                return pause_tb;${wasm32Eol}            }`
 let patchedWasm32 = wasm32Source.replace(
   wasm32DeclarationAnchor,
   `${wasm32DeclarationAnchor}${wasm32Eol}bool linuxlab_pause_requested(void);${wasm32Eol}`,
 )
-patchedWasm32 = patchedWasm32.replace(tciGotoTbAnchor, `        case INDEX_op_goto_tb:${tciPauseGuard}${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);`)
-patchedWasm32 = patchedWasm32.replace(tciGotoPtrAnchor, `        case INDEX_op_goto_ptr:${tciPauseGuard}${wasm32Eol}            tci_args_r(insn, &r0);`)
+patchedWasm32 = patchedWasm32.replace(
+  tciGotoTbAnchor,
+  `        case INDEX_op_goto_tb:${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                break;${wasm32Eol}            }`,
+)
+patchedWasm32 = patchedWasm32.replace(
+  tciGotoPtrAnchor,
+  `        case INDEX_op_goto_ptr:${wasm32Eol}            if (linuxlab_pause_requested()) {${wasm32Eol}                ctx.tb_ptr = 0;${wasm32Eol}                return 0;${wasm32Eol}            }${wasm32Eol}            tci_args_r(insn, &r0);`,
+)
 await writeFile(wasm32Path, patchedWasm32, 'utf8')
 
 const wasmSource = await readFile(wasmTargetPath, 'utf8')
@@ -110,12 +115,21 @@ let patchedWasm = wasmSource.replace(
 patchedWasm = patchedWasm.replace(exitFunctionAnchor, `${pauseEmitter}${exitFunctionAnchor}`)
 patchedWasm = patchedWasm.replace(
   gotoPtrAnchor,
-  `${gotoPtrAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);${wasmEol}    tcg_wasm_out_op_local_set(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
+  `${gotoPtrAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_i32_const(s, 0);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
 )
 
-patchedWasm = patchedWasm.replace(
-  gotoTbAnchor,
-  `${gotoTbAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_load(s, TB_PTR_OFF);${wasmEol}    tcg_wasm_out_op_local_set(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_local_get(s, TMP32_LOCAL_0_IDX);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
+const gotoTbStart = patchedWasm.indexOf(gotoTbAnchor)
+const gotoTbBodyStart = gotoTbStart + gotoTbAnchor.length
+const gotoTbEnd = patchedWasm.indexOf(`${wasmEol}}${wasmEol}`, gotoTbBodyStart)
+if (gotoTbStart < 0 || gotoTbEnd < 0) throw new Error('QEMU Wasm goto_tb function boundary changed')
+const gotoTbBody = patchedWasm.slice(gotoTbBodyStart, gotoTbEnd)
+const gotoTbLoopBranch = 'tcg_wasm_out_op_br(s, 3); // br to the top of loop'
+if (!gotoTbBody.includes(gotoTbLoopBranch)) throw new Error('QEMU Wasm goto_tb loop branch changed')
+const guardedGotoTbBodySource = gotoTbBody.replace(
+  gotoTbLoopBranch,
+  'tcg_wasm_out_op_br(s, 4); // br to the top of loop',
 )
+const guardedGotoTbBody = `${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_i32_eqz(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${guardedGotoTbBodySource}${wasmEol}    tcg_wasm_out_op_end(s);`
+patchedWasm = `${patchedWasm.slice(0, gotoTbBodyStart)}${guardedGotoTbBody}${patchedWasm.slice(gotoTbEnd)}`
 
 await writeFile(wasmTargetPath, patchedWasm, 'utf8')
