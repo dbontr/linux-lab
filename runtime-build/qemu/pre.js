@@ -1,4 +1,21 @@
 var LINUXLAB_ONEDRIVE_ROOT = '/linuxlab-onedrive';
+function linuxLabAtomicWordIndex(address) {
+  var value = Number(address);
+  if (!Number.isInteger(value) || value < 0 || (value & 3) !== 0) {
+    throw new Error('Invalid Linux Lab control word address');
+  }
+  return value >>> 2;
+}
+
+Module['linuxLabAtomicLoad32'] = function (address) {
+  return Atomics.load(HEAP32, linuxLabAtomicWordIndex(address));
+};
+Module['linuxLabAtomicStore32'] = function (address, value) {
+  return Atomics.store(HEAP32, linuxLabAtomicWordIndex(address), value | 0);
+};
+Module['linuxLabAtomicNotify32'] = function (address) {
+  return Atomics.notify(HEAP32, linuxLabAtomicWordIndex(address));
+};
 
 Module['preRun'] = Module['preRun'] || [];
 Module['preRun'].push(function () {

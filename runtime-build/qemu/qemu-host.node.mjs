@@ -6,6 +6,7 @@ import vm from 'node:vm'
 const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.meta.url), 'utf8')
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
+const preSource = readFileSync(new URL('./pre.js', import.meta.url), 'utf8')
 const rrWasmPatchSource = readFileSync(new URL('./patch-rr-wasm-init.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
@@ -64,19 +65,26 @@ test('QEMU boot arguments keep offline guests isolated from host shares', () => 
   assert.deepEqual(Array.from(args.slice(-2)), ['-boot', 'order=c'])
 })
 
-test('browser controls map to the exported QEMU control boundary', async () => {
+test('browser controls use shared-memory pause state without pause/resume ccall', async () => {
   const context = loadHost()
   context.controlCalls = []
-  context.runState = 1
   vm.runInContext(`
+    const controlWords = { 4: 0, 8: 0 };
     qemuModule = {
       ccall: (name, ...args) => {
         controlCalls.push([name, ...args]);
-        if (name === 'linuxlab_pause') runState = 0;
-        if (name === 'linuxlab_resume') runState = 1;
-        if (name === 'linuxlab_is_running') return runState;
         if (name === 'linuxlab_send_text') return 0;
       },
+    };
+    qemuControl = {
+      paused: 4, waiting: 8,
+      load: (address) => controlWords[address],
+      store: (address, value) => {
+        controlWords[address] = value;
+        if (address === 4) controlWords[8] = value ? 1 : 0;
+        return value;
+      },
+      notify: () => 1,
     };
   `, context)
 
@@ -84,15 +92,9 @@ test('browser controls map to the exported QEMU control boundary', async () => {
   await vm.runInContext("handleControl({ action: 'resume' })", context)
   await vm.runInContext("handleControl({ action: 'send-text', text: 'hello' })", context)
 
-  const actions = context.controlCalls.filter((call) => call[0] !== 'linuxlab_is_running')
-  assert.deepEqual(actions.map((call) => call[0]), [
-    'linuxlab_pause',
-    'linuxlab_resume',
-    'linuxlab_send_text',
-  ])
-  assert.deepEqual(Array.from(actions[2][3]), ['hello'])
+  assert.deepEqual(context.controlCalls.map((call) => call[0]), ['linuxlab_send_text'])
+  assert.deepEqual(Array.from(context.controlCalls[0][3]), ['hello'])
 })
-
 test('browser text control surfaces a busy QEMU input channel', async () => {
   const context = loadHost()
   vm.runInContext("qemuModule = { ccall: () => -3 }", context)
@@ -102,19 +104,26 @@ test('browser text control surfaces a busy QEMU input channel', async () => {
   )
 })
 
-test('QEMU readiness waits for the post-init control marker', async () => {
+test('QEMU readiness initializes shared pause-word control once', async () => {
   const context = loadHost()
   let polls = 0
+  const words = new Map([[64, 0], [68, 0]])
   context.readyModule = {
+    linuxLabAtomicLoad32: (address) => words.get(address) ?? 0,
+    linuxLabAtomicStore32: (address, value) => { words.set(address, value); return value },
+    linuxLabAtomicNotify32: () => 1,
     ccall(name) {
-      assert.equal(name, 'linuxlab_is_ready')
-      polls += 1
-      return polls >= 3 ? 1 : 0
+      if (name === 'linuxlab_is_ready') { polls += 1; return polls >= 3 ? 1 : 0 }
+      if (name === 'linuxlab_pause_word_address') return 64
+      if (name === 'linuxlab_pause_waiting_word_address') return 68
+      throw new Error(`unexpected ccall: ${name}`)
     },
   }
 
   await vm.runInContext('waitForQemuReady(readyModule)', context)
   assert.equal(polls, 3)
+  assert.equal(vm.runInContext('qemuControl.paused', context), 64)
+  assert.equal(vm.runInContext('qemuControl.waiting', context), 68)
 })
 
 test('headless PTY satisfies the linked xterm-pty contract', () => {
@@ -176,33 +185,42 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
 
-test('QEMU browser pause waits at the qemu-wasm dispatcher boundary', () => {
+test('QEMU pause ownership stays in shared memory and the vCPU dispatcher', () => {
+  assert.match(controlSource, /EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_word_address\(void\)/)
+  assert.match(controlSource, /EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_waiting_word_address\(void\)/)
   assert.match(controlSource, /linuxlab_pause_waiting/)
-  assert.match(controlSource, /linuxlab_virtual_clock_offset/)
-  assert.match(controlSource, /linuxlab_elapsed_ticks_offset/)
-  assert.match(controlSource, /linuxlab_adjust_virtual_clock/)
-  assert.match(controlSource, /linuxlab_adjust_elapsed_ticks/)
+  assert.match(controlSource, /cpu_get_clock\(\) - qatomic_read\(&linuxlab_virtual_clock_offset\)/)
+  assert.match(controlSource, /cpu_get_ticks\(\) - qatomic_read\(&linuxlab_elapsed_ticks_offset\)/)
+  assert.match(controlSource, /qatomic_store_release\(&linuxlab_pause_waiting, 1\)/)
   assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
   assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
-  assert.match(controlSource, /emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)
-  assert.doesNotMatch(controlSource, /cpu_disable_ticks\(\)|cpu_enable_ticks\(\)/)
-  assert.doesNotMatch(controlSource, /linuxlab_pause_word_address|linuxlab_pause_waiting_word_address/)
-  assert.doesNotMatch(controlSource, /cpu->stop|cpu->stopped|cpu_resume\(cpu\)|cpu_exit\(cpu\)|qemu_cpu_kick\(cpu\)|CPU_FOREACH/)
-  assert.doesNotMatch(controlSource, /vm_stop|vm_start|pause_all_vcpus|resume_all_vcpus/)
+  assert.match(controlSource, /qatomic_store_release\(&linuxlab_pause_waiting, 0\)/)
+  assert.doesNotMatch(controlSource, /EMSCRIPTEN_KEEPALIVE void linuxlab_pause\(void\)/)
+  assert.doesNotMatch(controlSource, /EMSCRIPTEN_KEEPALIVE void linuxlab_resume\(void\)/)
+  assert.doesNotMatch(controlSource, /cpu_disable_ticks\(\)|cpu_enable_ticks\(\)|cpu_exit\(|qemu_cpu_kick\(/)
 
-  assert.match(controlPatchSource, /const cpusPath = process\.argv\[4\]/)
-  assert.match(controlPatchSource, /const wasm32Path = process\.argv\[5\]/)
-  assert.match(controlPatchSource, /const wasmTargetPath = process\.argv\[6\]/)
-  assert.match(controlPatchSource, /linuxlab_adjust_virtual_clock\(cpus_accel->get_virtual_clock\(\)\)/)
-  assert.match(controlPatchSource, /linuxlab_adjust_elapsed_ticks\(cpus_accel->get_elapsed_ticks\(\)\)/)
+  assert.match(preSource, /Module\['linuxLabAtomicLoad32'\]/)
+  assert.match(preSource, /Module\['linuxLabAtomicStore32'\]/)
+  assert.match(preSource, /Module\['linuxLabAtomicNotify32'\]/)
+  assert.match(preSource, /Atomics\.load\(HEAP32/)
+  assert.match(preSource, /Atomics\.store\(HEAP32/)
+  assert.match(preSource, /Atomics\.notify\(HEAP32/)
+
+  assert.match(source, /ccall\('linuxlab_pause_word_address'/)
+  assert.match(source, /ccall\('linuxlab_pause_waiting_word_address'/)
+  assert.match(source, /control\.store\(control\.paused, 1\)/)
+  assert.match(source, /control\.store\(control\.paused, 0\)/)
+  assert.match(source, /control\.notify\(control\.paused\)/)
+  assert.doesNotMatch(source, /ccall\('linuxlab_pause'/)
+  assert.doesNotMatch(source, /ccall\('linuxlab_resume'/)
+  assert.doesNotMatch(source, /ccall\('linuxlab_is_running'/)
+
   assert.match(controlPatchSource, /linuxlab_vcpu_pause_wait\(\);/)
-  assert.match(controlPatchSource, /QEMU Wasm self-loop anchors changed/)
   assert.match(controlPatchSource, /Linux Lab dispatcher boundary/)
   assert.doesNotMatch(controlPatchSource, /i32\.atomic\.load|memory\.atomic\.wait32|linuxlab_pause_word_address/)
   assert.match(buildSource, /system\/cpus\.c/)
   assert.match(buildSource, /tcg\/wasm32\.c/)
   assert.match(buildSource, /tcg\/wasm32\/tcg-target\.c\.inc/)
-  assert.match(buildSource, /patch-rr-wasm-init\.mjs/)
   assert.match(rrWasmPatchSource, /init_wasm32\(\);/)
   assert.match(source, /tcg,thread=single,tb-size=500/)
   assert.doesNotMatch(source, /'-d', 'nochain'/)

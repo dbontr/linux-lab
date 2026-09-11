@@ -10,6 +10,7 @@ const networkBase = new URL('network/', qemuBase)
 let bootStarted = false
 let mediaObjectUrl = null
 let qemuModule = null
+let qemuControl = null
 
 function post(type, detail = {}) {
   parent.postMessage({ source: SOURCE, type, ...detail }, location.origin)
@@ -158,6 +159,26 @@ function setOneDriveToken(module, token) {
   if (result !== 0) throw new Error('OneDrive access token is too large for the QEMU bridge')
 }
 
+function initializeAtomicControl(module) {
+  if (typeof module.linuxLabAtomicLoad32 !== 'function' || typeof module.linuxLabAtomicStore32 !== 'function' || typeof module.linuxLabAtomicNotify32 !== 'function') {
+    throw new Error('QEMU shared-memory control helpers are unavailable')
+  }
+  const paused = module.ccall('linuxlab_pause_word_address', 'number', [], [])
+  const waiting = module.ccall('linuxlab_pause_waiting_word_address', 'number', [], [])
+  if (!Number.isInteger(paused) || paused <= 0 || !Number.isInteger(waiting) || waiting <= 0) throw new Error('QEMU shared control words are invalid')
+  qemuControl = {
+    paused, waiting,
+    load: (address) => module.linuxLabAtomicLoad32(address),
+    store: (address, value) => module.linuxLabAtomicStore32(address, value),
+    notify: (address) => module.linuxLabAtomicNotify32(address),
+  }
+}
+
+function requireAtomicControl() {
+  if (!qemuControl) throw new Error('QEMU shared-memory control interface is not ready')
+  return qemuControl
+}
+
 async function boot(request) {
   if (bootStarted) throw new Error('The VM has already started')
   bootStarted = true
@@ -231,7 +252,10 @@ async function waitForQemuReady(module) {
   const deadline = Date.now() + QEMU_READY_TIMEOUT_MS
   while (Date.now() < deadline) {
     try {
-      if (module.ccall('linuxlab_is_ready', 'number', [], []) === 1) return
+      if (module.ccall('linuxlab_is_ready', 'number', [], []) === 1) {
+        initializeAtomicControl(module)
+        return
+      }
     } catch {
       // The exported control boundary becomes available after module initialization.
     }
@@ -250,14 +274,19 @@ async function handleControl(request) {
     throw new Error('QEMU control interface is not ready')
   }
   switch (request.action) {
-    case 'pause':
-      qemuModule.ccall('linuxlab_pause', null, [], [])
+    case 'pause': {
+      const control = requireAtomicControl()
+      control.store(control.paused, 1)
       await waitForRunState(false)
       return
-    case 'resume':
-      qemuModule.ccall('linuxlab_resume', null, [], [])
+    }
+    case 'resume': {
+      const control = requireAtomicControl()
+      control.store(control.paused, 0)
+      control.notify(control.paused)
       await waitForRunState(true)
       return
+    }
     case 'send-text': {
       const result = qemuModule.ccall('linuxlab_send_text', 'number', ['string'], [String(request.text ?? '')])
       if (result === -2) throw new Error('QEMU text command is too long')
@@ -271,10 +300,12 @@ async function handleControl(request) {
 }
 
 async function waitForRunState(running) {
+  const control = requireAtomicControl()
   const deadline = Date.now() + CONTROL_STATE_TIMEOUT_MS
-  const expected = running ? 1 : 0
   while (Date.now() < deadline) {
-    if (qemuModule.ccall('linuxlab_is_running', 'number', [], []) === expected) return
+    const paused = control.load(control.paused)
+    const waiting = control.load(control.waiting)
+    if (running ? paused === 0 && waiting === 0 : paused !== 0 && waiting !== 0) return
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error(`QEMU did not ${running ? 'resume' : 'pause'}`)
