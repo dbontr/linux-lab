@@ -78,7 +78,7 @@ function bootArguments(mediaSource, kind, requestedMemory, firmware, networkEnab
   const args = [
     '-m', `${memory}M`,
     '-smp', '1',
-    '-accel', 'tcg,tb-size=500',
+    '-accel', 'tcg,thread=single,tb-size=500',
     '-cpu', 'max',
     '-machine', 'pc',
     '-L', '/pack',

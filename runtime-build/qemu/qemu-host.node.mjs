@@ -6,6 +6,7 @@ import vm from 'node:vm'
 const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.meta.url), 'utf8')
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
+const rrWasmPatchSource = readFileSync(new URL('./patch-rr-wasm-init.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
 
@@ -39,6 +40,7 @@ test('QEMU boot arguments expose browser networking and OneDrive 9P', () => {
 
   assert.equal(args[args.indexOf('-m') + 1], '512M')
   assert.equal(args[args.indexOf('-smp') + 1], '1')
+  assert.equal(args[args.indexOf('-accel') + 1], 'tcg,thread=single,tb-size=500')
   assert.equal(args.includes('-d'), false)
   assert(args.includes('socket,id=vmnic,connect=localhost:8888'))
   assert(args.includes('local,path=/.wasmenv,mount_tag=wasm0,security_model=passthrough,id=wasm0'))
@@ -196,6 +198,11 @@ test('QEMU browser pause uses native vCPU stop and kick semantics', () => {
   assert.doesNotMatch(controlPatchSource, /wasm32|cpuExecPath|mttcg|trysleepAnchor|guardFastChain/)
   assert.match(controlPatchSource, /<system\/meson\.build> <system\/main\.c>/)
   assert.match(buildSource, /node "\$SCRIPT_DIR\/patch-control\.mjs"/)
+  assert.match(buildSource, /patch-rr-wasm-init\.mjs/)
+  assert.match(buildSource, /tcg-accel-ops-rr\.c/)
+  assert.match(rrWasmPatchSource, /#include "\.\.\/\.\.\/tcg\/wasm32\.h"/)
+  assert.match(rrWasmPatchSource, /init_wasm32\(\);/)
+  assert.match(source, /tcg,thread=single,tb-size=500/)
   assert.doesNotMatch(buildSource, /"\$SOURCE_DIR\/tcg\/wasm32/)
   assert.doesNotMatch(buildSource, /"\$SOURCE_DIR\/accel\/tcg\/cpu-exec\.c/)
   assert.doesNotMatch(source, /'-d', 'nochain'/)
