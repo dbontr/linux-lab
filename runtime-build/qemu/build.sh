@@ -41,7 +41,9 @@ node "$SCRIPT_DIR/patch-onedrive.mjs" "$SOURCE_DIR/hw/9pfs/meson.build"
 cp "$SCRIPT_DIR/linuxlab-control.c" "$SOURCE_DIR/system/linuxlab-control.c"
 node "$SCRIPT_DIR/patch-control.mjs" \
   "$SOURCE_DIR/system/meson.build" \
-  "$SOURCE_DIR/system/main.c"
+  "$SOURCE_DIR/system/main.c" \
+  "$SOURCE_DIR/tcg/wasm32.c" \
+  "$SOURCE_DIR/tcg/wasm32/tcg-target.c.inc"
 node "$SCRIPT_DIR/patch-rr-wasm-init.mjs" "$SOURCE_DIR/accel/tcg/tcg-accel-ops-rr.c"
 node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c"
 
@@ -86,8 +88,8 @@ docker run --rm -d \
 
 docker exec "$CONTAINER_NAME" embuilder --force build sdl2-mt
 
-COMMON_FLAGS="-O3 -g0 -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -pthread -sUSE_SDL=2 -sASYNCIFY=1 -sSUPPORT_LONGJMP=wasm -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=dlmalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js"
-LINK_FLAGS="--pre-js /linux-lab-runtime/pre.js -sSUPPORT_LONGJMP=wasm -sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS,ccall"
+COMMON_FLAGS="-O3 -g0 -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -pthread -sUSE_SDL=2 -sASYNCIFY=1 -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=dlmalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js"
+LINK_FLAGS="--pre-js /linux-lab-runtime/pre.js -sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS,ccall"
 
 docker exec "$CONTAINER_NAME" emconfigure /qemu/configure \
   --static \
