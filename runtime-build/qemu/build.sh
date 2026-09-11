@@ -41,7 +41,10 @@ node "$SCRIPT_DIR/patch-onedrive.mjs" "$SOURCE_DIR/hw/9pfs/meson.build"
 cp "$SCRIPT_DIR/linuxlab-control.c" "$SOURCE_DIR/system/linuxlab-control.c"
 node "$SCRIPT_DIR/patch-control.mjs" \
   "$SOURCE_DIR/system/meson.build" \
-  "$SOURCE_DIR/system/main.c"
+  "$SOURCE_DIR/system/main.c" \
+  "$SOURCE_DIR/accel/tcg/cpu-exec.c" \
+  "$SOURCE_DIR/tcg/wasm32.c" \
+  "$SOURCE_DIR/tcg/wasm32/tcg-target.c.inc"
 node "$SCRIPT_DIR/patch-rr-wasm-init.mjs" "$SOURCE_DIR/accel/tcg/tcg-accel-ops-rr.c"
 node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c"
 
