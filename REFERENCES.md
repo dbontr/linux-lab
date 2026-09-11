@@ -10,7 +10,8 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/Wasm runtime used by the 32-bit backend.
 - [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) — QEMU system emulation compiled to WebAssembly; Linux Lab pins commit `0ef7b4e2814b231705d8371dd7997f5b72e70baf` for the x86-64 backend.
 - [qemu-wasm browser networking example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/networking) — browser-side QEMU socket networking and guest proxy/certificate setup.
-- [QEMU AIO bottom-half API](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/include/block/aio.h) — preallocated `QEMUBH` callbacks and wait-free, thread-safe scheduling used to transfer browser control requests onto QEMU's owning thread without cross-thread allocation.
+- [QEMU AIO bottom-half API](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/include/block/aio.h) — preallocated `QEMUBH` callbacks and wait-free, thread-safe scheduling used to transfer browser keyboard-text requests onto QEMU's owning thread without cross-thread allocation.
+- [QEMU CPU exit request](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/hw/core/cpu-common.c) — `cpu_exit()` interrupts linked TCG execution without changing VM runstate; Linux Lab uses it to make a browser Pause request observable at the next QEMU-Wasm dispatcher boundary.
 - [QEMU](https://www.qemu.org/) — PC machine, x86-64 CPU, IDE/optical disk, VGA, and firmware semantics inherited by the compatibility backend.
 
 ## Browser runtime support
@@ -66,7 +67,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
 - QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
 - QEMU browser builds use Emscripten `dlmalloc` so allocator integrity and predictable threaded I/O behavior take priority over allocator-level contention scaling.
-- QEMU browser Pause is observed at qemu-wasm's translation-block dispatcher. While paused, executing vCPU workers cooperatively yield through Asyncify without mutating QEMU CPU state or entering a hard pthread/futex wait; Resume clears the shared pause flag.
+- QEMU browser Pause sets a shared flag and issues QEMU's native `cpu_exit()` request so linked translation-block execution returns to qemu-wasm's dispatcher. The vCPU then cooperatively yields through Asyncify until Resume clears the flag; VM runstate is not changed.
 - Browser Pause and Resume write only a shared atomic flag that qemu-wasm observes between translation blocks. Keyboard text remains routed through a persistent QEMU bottom half because input-device mutation belongs to QEMU's owning thread.
 - The QEMU browser profile uses one vCPU. Pause acknowledgement is the shared pause-waiter count, so browser status checks do not traverse QEMU CPU objects across threads.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.

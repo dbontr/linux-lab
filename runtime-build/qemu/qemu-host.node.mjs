@@ -172,7 +172,7 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-test('QEMU pause uses shared atomic state and keeps keyboard input on the owning thread', () => {
+test('QEMU pause interrupts linked TBs and keeps keyboard input on the owning thread', () => {
   assert.doesNotMatch(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.doesNotMatch(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_text_bh, NULL\)/)
@@ -189,9 +189,11 @@ test('QEMU pause uses shared atomic state and keeps keyboard input on the owning
   assert.doesNotMatch(controlSource, /emscripten_atomic_wait_u32\(/)
   assert.doesNotMatch(controlSource, /emscripten_futex_wait\(/)
   assert.doesNotMatch(controlSource, /CPU_FOREACH|cpu->running/)
+  assert.match(controlSource, /cpu = first_cpu;/)
+  assert.match(controlSource, /cpu_exit\(cpu\)/)
   assert.match(controlPatchSource, /linuxlab_vcpu_pause_point\(\);/)
   assert.match(controlPatchSource, /linuxlab_vcpu_pause_point\(\);\$\{wasm32Eol\}        trysleep\(\);/)
-  assert.doesNotMatch(controlSource, /cpu_exit\(cpu\)|cpu->stop = true|qemu_cpu_kick\(cpu\)/)
+  assert.doesNotMatch(controlSource, /cpu->stop = true|qemu_cpu_kick\(cpu\)/)
   assert.doesNotMatch(controlSource, /cpu_disable_ticks\(\)|cpu_enable_ticks\(\)/)
   assert.doesNotMatch(controlSource, /pause_all_vcpus\(\)|resume_all_vcpus\(\)/)
   assert.doesNotMatch(controlSource, /vm_stop\(|vm_start\(/)
