@@ -92,12 +92,9 @@ patchedWasm = patchedWasm.replace(
   `${gotoPtrAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_i32_const(s, 0);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
 )
 
-const gotoTbStart = patchedWasm.indexOf(gotoTbAnchor)
-const gotoTbBodyStart = gotoTbStart + gotoTbAnchor.length
-const gotoTbEnd = patchedWasm.indexOf(`${wasmEol}}${wasmEol}`, gotoTbBodyStart)
-if (gotoTbStart < 0 || gotoTbEnd < 0) throw new Error('QEMU Wasm goto_tb function boundary changed')
-const gotoTbBody = patchedWasm.slice(gotoTbBodyStart, gotoTbEnd)
-const guardedGotoTbBody = `${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_i32_eqz(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${gotoTbBody}${wasmEol}    tcg_wasm_out_op_end(s);`
-patchedWasm = `${patchedWasm.slice(0, gotoTbBodyStart)}${guardedGotoTbBody}${patchedWasm.slice(gotoTbEnd)}`
+patchedWasm = patchedWasm.replace(
+  gotoTbAnchor,
+  `${gotoTbAnchor}${wasmEol}    tcg_wasm_out_pause_requested(s);${wasmEol}    tcg_wasm_out_op_if_noret(s);${wasmEol}    tcg_wasm_out_ctx_i32_store_const(s, TB_PTR_OFF, 0);${wasmEol}    tcg_wasm_out_op_i32_const(s, 0);${wasmEol}    tcg_wasm_out_op_return(s);${wasmEol}    tcg_wasm_out_op_end(s);`,
+)
 
 await writeFile(wasmTargetPath, patchedWasm, 'utf8')
