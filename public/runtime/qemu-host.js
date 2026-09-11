@@ -251,11 +251,15 @@ async function handleControl(request) {
   }
   switch (request.action) {
     case 'pause':
+      appendLog('DIAG pause ccall begin')
       qemuModule.ccall('linuxlab_pause', null, [], [])
+      appendLog('DIAG pause ccall returned')
       await waitForRunState(false)
       return
     case 'resume':
+      appendLog('DIAG resume ccall begin')
       qemuModule.ccall('linuxlab_resume', null, [], [])
+      appendLog('DIAG resume ccall returned')
       await waitForRunState(true)
       return
     case 'send-text': {
@@ -274,7 +278,10 @@ async function waitForRunState(running) {
   const deadline = Date.now() + CONTROL_STATE_TIMEOUT_MS
   const expected = running ? 1 : 0
   while (Date.now() < deadline) {
-    if (qemuModule.ccall('linuxlab_is_running', 'number', [], []) === expected) return
+    appendLog('DIAG is_running ccall begin')
+    const state = qemuModule.ccall('linuxlab_is_running', 'number', [], [])
+    appendLog('DIAG is_running state=' + state + ' expected=' + expected)
+    if (state === expected) return
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error(`QEMU did not ${running ? 'resume' : 'pause'}`)
