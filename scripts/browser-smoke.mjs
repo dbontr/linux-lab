@@ -182,6 +182,13 @@ async function smokeV86(page, pageErrors) {
   assert.equal(await page.locator('[data-facts] dd').nth(3).textContent(), 'v86')
 }
 
+async function sampleQemuClocks(frame) {
+  return frame.evaluate(() => ({
+    virtualNs: window.Module.ccall('linuxlab_virtual_clock_ns', 'number', [], []),
+    elapsedTicks: window.Module.ccall('linuxlab_elapsed_ticks', 'number', [], []),
+  }))
+}
+
 async function smokeQemu(page) {
   const graphRequests = []
   await page.route('https://graph.microsoft.com/**', async (route) => {
@@ -205,13 +212,30 @@ async function smokeQemu(page) {
   await waitForStatus(page, 'OneDrive bridge attached', 90_000)
   assert(graphRequests.some((request) => request.method === 'GET' && request.url.endsWith('/v1.0/me/drive/root') && request.authorization === 'Bearer linux-lab-browser-smoke-token'), 'QEMU OneDrive bridge did not authenticate its Graph root probe')
   assert.equal(await page.locator('iframe.qemu-frame').count(), 1)
+  const qemuFrame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
+  assert(qemuFrame, 'QEMU runtime frame is missing')
+  const runningClock = await sampleQemuClocks(qemuFrame)
+  await page.waitForTimeout(75)
+  const advancedClock = await sampleQemuClocks(qemuFrame)
+  assert(advancedClock.virtualNs > runningClock.virtualNs, 'QEMU virtual clock did not advance while running')
+  assert(advancedClock.elapsedTicks > runningClock.elapsedTicks, 'QEMU elapsed ticks did not advance while running')
+
   await page.locator('[data-pause]').click()
   await waitForStatus(page, 'is stopped', 10_000)
   assert.equal(await page.locator('[data-pause]').textContent(), 'Resume')
+  const pausedClock = await sampleQemuClocks(qemuFrame)
+  await page.waitForTimeout(150)
+  const stillPausedClock = await sampleQemuClocks(qemuFrame)
+  assert.equal(stillPausedClock.virtualNs, pausedClock.virtualNs, 'QEMU virtual clock advanced while paused')
+  assert.equal(stillPausedClock.elapsedTicks, pausedClock.elapsedTicks, 'QEMU elapsed ticks advanced while paused')
 
   await page.locator('[data-pause]').click()
   await waitForStatus(page, 'is running', 10_000)
   assert.equal(await page.locator('[data-pause]').textContent(), 'Pause')
+  await page.waitForTimeout(75)
+  const resumedClock = await sampleQemuClocks(qemuFrame)
+  assert(resumedClock.virtualNs > stillPausedClock.virtualNs, 'QEMU virtual clock did not resume')
+  assert(resumedClock.elapsedTicks > stillPausedClock.elapsedTicks, 'QEMU elapsed ticks did not resume')
 
   await page.locator('[data-send-mount]').click()
   await page.locator('[data-notice]').filter({ hasText: 'Mount command sent' }).waitFor({ timeout: 10_000 })
@@ -222,9 +246,9 @@ async function smokeQemu(page) {
   await page.locator('[data-boot]').click()
   await waitForStatus(page, 'is running', 90_000)
   await page.locator('[data-session-name]').filter({ hasText: 'TinyCore-11.0.iso' }).waitFor()
-  const frame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
-  assert(frame, 'QEMU custom-media frame is missing')
-  const args = await frame.evaluate(() => window.Module.arguments)
+  const customFrame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
+  assert(customFrame, 'QEMU custom-media frame is missing')
+  const args = await customFrame.evaluate(() => window.Module.arguments)
   assert(args.some((value) => String(value).includes('media=cdrom')))
   assert.equal(args.some((value) => String(value).includes('pflash')), false)
 }

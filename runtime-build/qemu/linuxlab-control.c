@@ -1,9 +1,9 @@
 /* Linux Lab browser controls for the QEMU-Wasm runtime. */
 #include "qemu/osdep.h"
-#include "hw/core/cpu.h"
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
 #include "sysemu/cpus.h"
+#include "sysemu/cpu-timers.h"
 #include "sysemu/runstate.h"
 #include "ui/input.h"
 
@@ -16,8 +16,6 @@ static void linuxlab_resume_bh(void *opaque);
 static void linuxlab_text_bh(void *opaque);
 
 static int linuxlab_ready;
-static uint32_t linuxlab_paused;
-static int linuxlab_pause_waiters;
 static QEMUBH *linuxlab_pause_bh_handle;
 static QEMUBH *linuxlab_resume_bh_handle;
 static QEMUBH *linuxlab_text_bh_handle;
@@ -34,8 +32,6 @@ void linuxlab_runtime_prepare(void)
 
 void linuxlab_runtime_ready(void)
 {
-    qatomic_set(&linuxlab_pause_waiters, 0);
-    qatomic_set(&linuxlab_paused, 0);
     qatomic_set(&linuxlab_text_length, 0);
     qatomic_set(&linuxlab_text_busy, 0);
     linuxlab_pause_bh_handle = qemu_bh_new(linuxlab_pause_bh, NULL);
@@ -44,68 +40,41 @@ void linuxlab_runtime_ready(void)
     qatomic_set(&linuxlab_ready, 1);
 }
 
-bool linuxlab_pause_requested(void)
-{
-    return qatomic_read(&linuxlab_paused) != 0;
-}
-
-void linuxlab_vcpu_pause_point(void)
-{
-    if (!linuxlab_pause_requested()) {
-        return;
-    }
-
-    qatomic_inc(&linuxlab_pause_waiters);
-    while (qatomic_read(&linuxlab_paused)) {
-        emscripten_sleep(1);
-    }
-    qatomic_dec(&linuxlab_pause_waiters);
-}
-
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 {
-    return qatomic_read(&linuxlab_ready) && runstate_is_running()
-        && !qatomic_read(&linuxlab_paused);
+    return qatomic_read(&linuxlab_ready) &&
+        (runstate_is_running() || runstate_check(RUN_STATE_PAUSED));
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
-    CPUState *cpu;
-    int running = 0;
+    return runstate_is_running() ? 1 : 0;
+}
 
-    if (!runstate_is_running()) {
-        return 0;
-    }
-    if (!qatomic_read(&linuxlab_paused)) {
-        return qatomic_read(&linuxlab_pause_waiters) == 0;
-    }
+EMSCRIPTEN_KEEPALIVE double linuxlab_virtual_clock_ns(void)
+{
+    return (double)cpus_get_virtual_clock();
+}
 
-    CPU_FOREACH(cpu) {
-        if (qatomic_read(&cpu->running)) {
-            running++;
-        }
-    }
-    return running > qatomic_read(&linuxlab_pause_waiters);
+EMSCRIPTEN_KEEPALIVE double linuxlab_elapsed_ticks(void)
+{
+    return (double)cpus_get_elapsed_ticks();
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
     (void)opaque;
-    if (!runstate_is_running() || qatomic_read(&linuxlab_paused)) {
-        return;
+    if (runstate_is_running()) {
+        vm_stop(RUN_STATE_PAUSED);
     }
-
-    qatomic_set(&linuxlab_paused, 1);
 }
 
 static void linuxlab_resume_bh(void *opaque)
 {
     (void)opaque;
-    if (!runstate_is_running() || !qatomic_read(&linuxlab_paused)) {
-        return;
+    if (runstate_check(RUN_STATE_PAUSED)) {
+        vm_start();
     }
-
-    qatomic_set(&linuxlab_paused, 0);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {
