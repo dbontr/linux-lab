@@ -45,16 +45,16 @@ const execLoopAnchor = `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${
 if (!cpuExecSource.includes(cpuExecDeclarationAnchor) || !cpuExecSource.includes(execLoopAnchor)) {
   throw new Error('QEMU CPU execution pause anchors changed')
 }
-if (cpuExecSource.includes('linuxlab_vcpu_pause_wait')) {
+if (cpuExecSource.includes('bool linuxlab_pause_requested(void);')) {
   throw new Error('Linux Lab CPU pause hook is already registered')
 }
 let patchedCpuExec = cpuExecSource.replace(
   cpuExecDeclarationAnchor,
-  `${cpuExecDeclarationAnchor}${cpuExecEol}void linuxlab_vcpu_pause_wait(void);${cpuExecEol}`,
+  `${cpuExecDeclarationAnchor}${cpuExecEol}bool linuxlab_pause_requested(void);${cpuExecEol}`,
 )
 patchedCpuExec = patchedCpuExec.replace(
   execLoopAnchor,
-  `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${cpuExecEol}            linuxlab_vcpu_pause_wait();${cpuExecEol}            TranslationBlock *tb;`,
+  `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${cpuExecEol}            if (unlikely(linuxlab_pause_requested())) {${cpuExecEol}                return EXCP_INTERRUPT;${cpuExecEol}            }${cpuExecEol}            TranslationBlock *tb;`,
 )
 await writeFile(cpuExecPath, patchedCpuExec, 'utf8')
 

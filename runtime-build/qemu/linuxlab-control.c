@@ -9,7 +9,6 @@
 #include "ui/input.h"
 
 #include <emscripten/emscripten.h>
-#include <emscripten/threading.h>
 
 #define LINUXLAB_TEXT_CAPACITY 4096
 
@@ -19,7 +18,6 @@ static void linuxlab_text_bh(void *opaque);
 
 static int linuxlab_ready;
 static uint32_t linuxlab_paused;
-static int linuxlab_pause_waiters;
 static QEMUBH *linuxlab_pause_bh_handle;
 static QEMUBH *linuxlab_resume_bh_handle;
 static QEMUBH *linuxlab_text_bh_handle;
@@ -36,7 +34,6 @@ void linuxlab_runtime_prepare(void)
 
 void linuxlab_runtime_ready(void)
 {
-    qatomic_set(&linuxlab_pause_waiters, 0);
     qatomic_store_release(&linuxlab_paused, 0);
     qatomic_set(&linuxlab_text_length, 0);
     qatomic_set(&linuxlab_text_busy, 0);
@@ -56,18 +53,6 @@ uintptr_t linuxlab_pause_word_address(void)
     return (uintptr_t)&linuxlab_paused;
 }
 
-void linuxlab_vcpu_pause_wait(void)
-{
-    if (!linuxlab_pause_requested()) {
-        return;
-    }
-
-    qatomic_inc(&linuxlab_pause_waiters);
-    while (linuxlab_pause_requested()) {
-        emscripten_thread_sleep(1);
-    }
-    qatomic_dec(&linuxlab_pause_waiters);
-}
 
 EMSCRIPTEN_KEEPALIVE double linuxlab_virtual_clock_ns(void)
 {
@@ -95,27 +80,32 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
     if (!linuxlab_pause_requested()) {
         return 1;
     }
-    if (qatomic_read(&linuxlab_pause_waiters) != 0) {
-        return 0;
-    }
 
     cpu = first_cpu;
-    return cpu && qatomic_read(&cpu->running);
+    return cpu && !cpu->stopped;
 }
 
 static void linuxlab_pause_bh(void *opaque)
 {
+    CPUState *cpu;
+
     (void)opaque;
     if (!runstate_is_running() || linuxlab_pause_requested()) {
         return;
     }
 
     cpu_disable_ticks();
+    cpu = first_cpu;
+    if (cpu) {
+        cpu->stop = true;
+    }
     qatomic_store_release(&linuxlab_paused, 1);
 }
 
 static void linuxlab_resume_bh(void *opaque)
 {
+    CPUState *cpu;
+
     (void)opaque;
     if (!runstate_is_running() || !linuxlab_pause_requested()) {
         return;
@@ -123,6 +113,10 @@ static void linuxlab_resume_bh(void *opaque)
 
     cpu_enable_ticks();
     qatomic_store_release(&linuxlab_paused, 0);
+    cpu = first_cpu;
+    if (cpu) {
+        cpu_resume(cpu);
+    }
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {
