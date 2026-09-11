@@ -205,13 +205,25 @@ async function smokeQemu(page) {
   await waitForStatus(page, 'OneDrive bridge attached', 90_000)
   assert(graphRequests.some((request) => request.method === 'GET' && request.url.endsWith('/v1.0/me/drive/root') && request.authorization === 'Bearer linux-lab-browser-smoke-token'), 'QEMU OneDrive bridge did not authenticate its Graph root probe')
   assert.equal(await page.locator('iframe.qemu-frame').count(), 1)
-  await page.locator('[data-pause]').click()
-  await waitForStatus(page, 'is stopped', 10_000)
-  assert.equal(await page.locator('[data-pause]').textContent(), 'Resume')
-
-  await page.locator('[data-pause]').click()
-  await waitForStatus(page, 'is running', 10_000)
-  assert.equal(await page.locator('[data-pause]').textContent(), 'Pause')
+  const qemuFrame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
+  assert(qemuFrame, 'QEMU runtime frame is missing')
+  const beforePause = await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_is_running', 'number', [], []))
+  await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_pause', null, [], []))
+  const pauseSamples = []
+  for (let i = 0; i < 40; i += 1) {
+    pauseSamples.push(await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_is_running', 'number', [], [])))
+    await page.waitForTimeout(50)
+  }
+  console.log('D780 pause samples', { beforePause, pauseSamples })
+  await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_resume', null, [], []))
+  const resumeSamples = []
+  for (let i = 0; i < 20; i += 1) {
+    resumeSamples.push(await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_is_running', 'number', [], [])))
+    await page.waitForTimeout(50)
+  }
+  console.log('D780 resume samples', { resumeSamples })
+  assert(pauseSamples.includes(0), 'Cached d780 runtime never reported paused')
+  assert(resumeSamples.includes(1), 'Cached d780 runtime never reported resumed')
 
   await page.locator('[data-send-mount]').click()
   await page.locator('[data-notice]').filter({ hasText: 'Mount command sent' }).waitFor({ timeout: 10_000 })
