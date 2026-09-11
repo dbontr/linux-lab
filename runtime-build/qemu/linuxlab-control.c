@@ -1,5 +1,6 @@
 /* Linux Lab browser controls for the QEMU-Wasm runtime. */
 #include "qemu/osdep.h"
+#include "hw/core/cpu.h"
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
 #include "sysemu/cpus.h"
@@ -89,6 +90,8 @@ EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 
 static void linuxlab_pause_bh(void *opaque)
 {
+    CPUState *cpu;
+
     (void)opaque;
     if (!runstate_is_running() || linuxlab_pause_requested()) {
         return;
@@ -96,16 +99,27 @@ static void linuxlab_pause_bh(void *opaque)
 
     cpu_disable_ticks();
     qatomic_store_release(&linuxlab_paused, 1);
+    cpu = first_cpu;
+    if (cpu) {
+        cpu->stop = true;
+        qemu_cpu_kick(cpu);
+    }
 }
 
 static void linuxlab_resume_bh(void *opaque)
 {
+    CPUState *cpu;
+
     (void)opaque;
     if (!runstate_is_running() || !linuxlab_pause_requested()) {
         return;
     }
 
     cpu_enable_ticks();
+    cpu = first_cpu;
+    if (cpu) {
+        cpu_resume(cpu);
+    }
     qatomic_store_release(&linuxlab_paused, 0);
 }
 static int linuxlab_scan_code(unsigned char ch, bool *shift)

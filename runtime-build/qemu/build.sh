@@ -42,9 +42,7 @@ cp "$SCRIPT_DIR/linuxlab-control.c" "$SOURCE_DIR/system/linuxlab-control.c"
 node "$SCRIPT_DIR/patch-control.mjs" \
   "$SOURCE_DIR/system/meson.build" \
   "$SOURCE_DIR/system/main.c" \
-  "$SOURCE_DIR/accel/tcg/cpu-exec.c" \
-  "$SOURCE_DIR/accel/tcg/tcg-accel-ops-mttcg.c" \
-  "$SOURCE_DIR/tcg/wasm32.c"
+  "$SOURCE_DIR/accel/tcg/tcg-accel-ops-mttcg.c"
 node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c"
 
 git clone --filter=blob:none --no-checkout https://github.com/libsdl-org/SDL.git "$SDL_SOURCE_DIR"
