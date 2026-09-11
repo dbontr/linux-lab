@@ -211,7 +211,7 @@ async function smokeQemu(page) {
   await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_pause', null, [], []))
   const pauseSamples = []
   for (let i = 0; i < 40; i += 1) {
-    pauseSamples.push(await qemuFrame.evaluate(() => window.Module.ccall('linuxlab_is_running', 'number', [], [])))
+    pauseSamples.push(await qemuFrame.evaluate(() => ({ running: window.Module.ccall('linuxlab_is_running', 'number', [], []), ready: window.Module.ccall('linuxlab_is_ready', 'number', [], []) })))
     await page.waitForTimeout(50)
   }
   console.log('D780 pause samples', { beforePause, pauseSamples })
@@ -222,7 +222,7 @@ async function smokeQemu(page) {
     await page.waitForTimeout(50)
   }
   console.log('D780 resume samples', { resumeSamples })
-  assert(pauseSamples.includes(0), 'Cached d780 runtime never reported paused')
+  assert(pauseSamples.some((sample) => sample.running === 0), 'Cached d780 runtime never reported paused')
   assert(resumeSamples.includes(1), 'Cached d780 runtime never reported resumed')
 
   await page.locator('[data-send-mount]').click()
