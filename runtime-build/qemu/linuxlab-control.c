@@ -50,15 +50,29 @@ bool linuxlab_pause_requested(void)
     return qatomic_load_acquire(&linuxlab_paused) != 0;
 }
 
+EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_word_address(void)
+{
+    return (uintptr_t)&linuxlab_paused;
+}
+
+EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_waiting_word_address(void)
+{
+    return (uintptr_t)&linuxlab_pause_waiting;
+}
+
 int64_t linuxlab_adjust_virtual_clock(int64_t raw_clock)
 {
-    if (linuxlab_pause_requested()) return qatomic_read(&linuxlab_frozen_virtual_clock);
+    if (qatomic_load_acquire(&linuxlab_pause_waiting)) {
+        return qatomic_read(&linuxlab_frozen_virtual_clock);
+    }
     return raw_clock - qatomic_read(&linuxlab_virtual_clock_offset);
 }
 
 int64_t linuxlab_adjust_elapsed_ticks(int64_t raw_ticks)
 {
-    if (linuxlab_pause_requested()) return qatomic_read(&linuxlab_frozen_elapsed_ticks);
+    if (qatomic_load_acquire(&linuxlab_pause_waiting)) {
+        return qatomic_read(&linuxlab_frozen_elapsed_ticks);
+    }
     return raw_ticks - qatomic_read(&linuxlab_elapsed_ticks_offset);
 }
 
@@ -68,6 +82,10 @@ void linuxlab_vcpu_pause_wait(void)
         return;
     }
 
+    qatomic_set(&linuxlab_frozen_virtual_clock,
+        cpu_get_clock() - qatomic_read(&linuxlab_virtual_clock_offset));
+    qatomic_set(&linuxlab_frozen_elapsed_ticks,
+        cpu_get_ticks() - qatomic_read(&linuxlab_elapsed_ticks_offset));
     qatomic_store_release(&linuxlab_pause_waiting, 1);
     while (linuxlab_pause_requested()) {
         emscripten_atomic_wait_u32(
@@ -76,6 +94,10 @@ void linuxlab_vcpu_pause_wait(void)
             ATOMICS_WAIT_DURATION_INFINITE
         );
     }
+    qatomic_set(&linuxlab_virtual_clock_offset,
+        cpu_get_clock() - qatomic_read(&linuxlab_frozen_virtual_clock));
+    qatomic_set(&linuxlab_elapsed_ticks_offset,
+        cpu_get_ticks() - qatomic_read(&linuxlab_frozen_elapsed_ticks));
     qatomic_store_release(&linuxlab_pause_waiting, 0);
 }
 
@@ -163,27 +185,6 @@ static void linuxlab_text_bh(void *opaque)
     }
     qatomic_set(&linuxlab_text_length, 0);
     qatomic_set(&linuxlab_text_busy, 0);
-}
-
-EMSCRIPTEN_KEEPALIVE void linuxlab_pause(void)
-{
-    if (!qatomic_read(&linuxlab_ready) || !runstate_is_running() || linuxlab_pause_requested()) return;
-    qatomic_set(&linuxlab_frozen_virtual_clock,
-        cpu_get_clock() - qatomic_read(&linuxlab_virtual_clock_offset));
-    qatomic_set(&linuxlab_frozen_elapsed_ticks,
-        cpu_get_ticks() - qatomic_read(&linuxlab_elapsed_ticks_offset));
-    qatomic_store_release(&linuxlab_paused, 1);
-}
-
-EMSCRIPTEN_KEEPALIVE void linuxlab_resume(void)
-{
-    if (!linuxlab_pause_requested()) return;
-    qatomic_set(&linuxlab_virtual_clock_offset,
-        cpu_get_clock() - qatomic_read(&linuxlab_frozen_virtual_clock));
-    qatomic_set(&linuxlab_elapsed_ticks_offset,
-        cpu_get_ticks() - qatomic_read(&linuxlab_frozen_elapsed_ticks));
-    qatomic_store_release(&linuxlab_paused, 0);
-    emscripten_atomic_notify(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS);
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_send_text(const char *text)

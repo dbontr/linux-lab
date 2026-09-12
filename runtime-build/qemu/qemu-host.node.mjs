@@ -64,33 +64,43 @@ test('QEMU boot arguments keep offline guests isolated from host shares', () => 
   assert.deepEqual(Array.from(args.slice(-2)), ['-boot', 'order=c'])
 })
 
-test('browser controls map to the exported QEMU control boundary', async () => {
+test('browser pause and resume use shared control words without Wasm calls', async () => {
   const context = loadHost()
   context.controlCalls = []
-  context.runState = 1
   vm.runInContext(`
+    controlBuffer = new SharedArrayBuffer(16);
     qemuModule = {
+      HEAPU8: new Uint8Array(controlBuffer),
       ccall: (name, ...args) => {
         controlCalls.push([name, ...args]);
-        if (name === 'linuxlab_pause') runState = 0;
-        if (name === 'linuxlab_resume') runState = 1;
-        if (name === 'linuxlab_is_running') return runState;
+        if (name === 'linuxlab_pause_word_address') return 4;
+        if (name === 'linuxlab_pause_waiting_word_address') return 8;
         if (name === 'linuxlab_send_text') return 0;
+        return 0;
       },
     };
+    qemuControlWords = bindControlWords(qemuModule);
   `, context)
 
-  await vm.runInContext("handleControl({ action: 'pause' })", context)
-  await vm.runInContext("handleControl({ action: 'resume' })", context)
-  await vm.runInContext("handleControl({ action: 'send-text', text: 'hello' })", context)
+  const pause = vm.runInContext("handleControl({ action: 'pause' })", context)
+  vm.runInContext('Atomics.store(qemuControlWords.waiting, 0, 1)', context)
+  await pause
+  assert.equal(vm.runInContext('Atomics.load(qemuControlWords.pause, 0)', context), 1)
 
-  const actions = context.controlCalls.filter((call) => call[0] !== 'linuxlab_is_running')
-  assert.deepEqual(actions.map((call) => call[0]), [
-    'linuxlab_pause',
-    'linuxlab_resume',
+  const resume = vm.runInContext("handleControl({ action: 'resume' })", context)
+  vm.runInContext('Atomics.store(qemuControlWords.waiting, 0, 0)', context)
+  await resume
+  assert.equal(vm.runInContext('Atomics.load(qemuControlWords.pause, 0)', context), 0)
+
+  await vm.runInContext("handleControl({ action: 'send-text', text: 'hello' })", context)
+  const names = context.controlCalls.map((call) => call[0])
+  assert.deepEqual(names, [
+    'linuxlab_pause_word_address',
+    'linuxlab_pause_waiting_word_address',
     'linuxlab_send_text',
   ])
-  assert.deepEqual(Array.from(actions[2][3]), ['hello'])
+  assert.equal(names.includes('linuxlab_pause'), false)
+  assert.equal(names.includes('linuxlab_resume'), false)
 })
 
 test('browser text control surfaces a busy QEMU input channel', async () => {
@@ -184,9 +194,15 @@ test('QEMU browser pause returns self-loops to the dispatcher and preserves gues
   assert.match(controlSource, /linuxlab_frozen_elapsed_ticks/)
   assert.match(controlSource, /linuxlab_adjust_virtual_clock/)
   assert.match(controlSource, /linuxlab_adjust_elapsed_ticks/)
+  assert.match(controlSource, /linuxlab_pause_word_address/)
+  assert.match(controlSource, /linuxlab_pause_waiting_word_address/)
+  assert.match(controlSource, /qatomic_load_acquire\(&linuxlab_pause_waiting\)/)
   assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
   assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
-  assert.match(controlSource, /qatomic_store_release\(&linuxlab_paused, 0\);[\s\S]*emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)
+  assert.match(controlSource, /cpu_get_clock\(\) - qatomic_read\(&linuxlab_virtual_clock_offset\)/)
+  assert.match(controlSource, /cpu_get_ticks\(\) - qatomic_read\(&linuxlab_elapsed_ticks_offset\)/)
+  assert.doesNotMatch(controlSource, /EMSCRIPTEN_KEEPALIVE void linuxlab_pause\(|EMSCRIPTEN_KEEPALIVE void linuxlab_resume\(/)
+  assert.doesNotMatch(controlSource, /emscripten_atomic_notify\(/)
   assert.doesNotMatch(controlSource, /cpu_disable_ticks\(\)|cpu_enable_ticks\(\)/)
   assert.match(controlPatchSource, /const cpusPath = process\.argv\[4\]/)
   assert.match(controlPatchSource, /const wasm32Path = process\.argv\[5\]/)
@@ -209,6 +225,12 @@ test('QEMU browser pause returns self-loops to the dispatcher and preserves gues
   assert.match(buildSource, /patch-rr-wasm-init\.mjs/)
   assert.match(rrWasmPatchSource, /init_wasm32\(\);/)
   assert.match(source, /tcg,thread=single,tb-size=500/)
+  assert.match(source, /SharedArrayBuffer/)
+  assert.match(source, /Atomics\.store\(words\.pause, 0, 1\)/)
+  assert.match(source, /Atomics\.store\(words\.pause, 0, 0\)/)
+  assert.match(source, /Atomics\.notify\(words\.pause, 0\)/)
+  assert.match(source, /Atomics\.load\(words\.waiting, 0\)/)
+  assert.doesNotMatch(source, /ccall\('linuxlab_pause'|ccall\('linuxlab_resume'|ccall\('linuxlab_is_running'/)
   assert.doesNotMatch(source, /'-d', 'nochain'/)
   assert.doesNotMatch(controlPatchSource, /cpuExecPath|tcg_tb_lookup/)
   assert.doesNotMatch(controlSource, /cpu->stop|cpu->stopped|cpu_resume\(cpu\)|cpu_exit\(cpu\)|qemu_cpu_kick\(cpu\)|CPU_FOREACH/)
