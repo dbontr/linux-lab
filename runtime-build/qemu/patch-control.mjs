@@ -102,8 +102,7 @@ const gotoTbSelfLoop = [
   '    tcg_wasm_out_op_br(s, 3); // br to the top of loop',
 ].join(wasmEol)
 const dispatcherReturn = [
-  '    tcg_wasm_out_op_i64_const(s, 0);',
-  '    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);',
+  '    tcg_wasm_out_ctx_i32_store_const(s, DO_INIT_OFF, 1);',
   '    tcg_wasm_out_op_i32_const(s, 0);',
   '    tcg_wasm_out_op_return(s);',
 ].join(wasmEol)

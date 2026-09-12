@@ -216,6 +216,7 @@ test('QEMU browser pause returns self-loops to the dispatcher and preserves gues
   assert.match(controlPatchSource, /gotoPtrSelfLoop/)
   assert.match(controlPatchSource, /gotoTbSelfLoop/)
   assert.match(controlPatchSource, /dispatcherReturn/)
+  assert.match(controlPatchSource, /tcg_wasm_out_ctx_i32_store_const\(s, DO_INIT_OFF, 1\)/)
   assert.match(controlPatchSource, /tcg_wasm_out_op_i32_const\(s, 0\)/)
   assert.match(controlPatchSource, /tcg_wasm_out_op_return\(s\)/)
   assert.doesNotMatch(controlPatchSource, /linuxlab_pause_word_address|memory\.atomic\.wait32|tcg_wasm_out_linuxlab_pause_wait/)
