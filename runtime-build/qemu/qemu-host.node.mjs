@@ -175,22 +175,24 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-test('QEMU browser pause completes native vCPU stop without block flush', () => {
+
+test('QEMU build keeps setjmp and longjmp inside WebAssembly', () => {
+  const commonFlags = buildSource.match(/COMMON_FLAGS="([^"]+)"/)?.[1] ?? ''
+  const linkFlags = buildSource.match(/LINK_FLAGS="([^"]+)"/)?.[1] ?? ''
+  assert.match(commonFlags, /-sSUPPORT_LONGJMP=wasm/)
+  assert.match(linkFlags, /-sSUPPORT_LONGJMP=wasm/)
+})
+
+test('QEMU native pause owns vCPU and clock transitions', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_text_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_pause_bh_handle\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_resume_bh_handle\)/)
   assert.match(controlSource, /qemu_bh_schedule\(linuxlab_text_bh_handle\)/)
-  assert.match(controlSource, /linuxlab_pause_complete/)
-  assert.match(controlSource, /runstate_set\(RUN_STATE_PAUSED\)/)
-  assert.match(controlSource, /cpu_disable_ticks\(\)/)
-  assert.match(controlSource, /pause_all_vcpus\(\)/)
-  assert.match(controlSource, /vm_state_notify\(false, RUN_STATE_PAUSED\)/)
-  assert.match(controlSource, /qatomic_store_release\(&linuxlab_pause_complete, 1\)/)
+  assert.match(controlSource, /vm_stop\(RUN_STATE_PAUSED\)/)
   assert.match(controlSource, /runstate_check\(RUN_STATE_PAUSED\)/)
   assert.match(controlSource, /vm_start\(\)/)
-  assert.doesNotMatch(controlSource, /vm_stop\(|bdrv_drain_all\(|bdrv_flush_all\(/)
   assert.match(controlSource, /linuxlab_virtual_clock_ns/)
   assert.match(controlSource, /linuxlab_elapsed_ticks/)
   assert.match(controlSource, /cpus_get_virtual_clock\(\)/)
@@ -202,5 +204,5 @@ test('QEMU browser pause completes native vCPU stop without block flush', () => 
   assert.doesNotMatch(controlPatchSource, /wasm32|linuxlab_vcpu_pause_point|tcg-accel-ops/)
   assert.match(buildSource, /patch-rr-wasm-init\.mjs/)
   assert.match(rrWasmPatchSource, /init_wasm32\(\);/)
-  assert.doesNotMatch(controlSource, /cpu->stop|qemu_cpu_kick|resume_all_vcpus/)
+  assert.doesNotMatch(controlSource, /cpu->stop|qemu_cpu_kick|pause_all_vcpus|resume_all_vcpus/)
 })
