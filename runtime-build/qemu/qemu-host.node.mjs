@@ -185,15 +185,15 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
 
-test('QEMU pause ownership stays in shared memory and the vCPU dispatcher', () => {
+test('QEMU pause ownership uses shared memory and a proxy-aware vCPU dispatcher', () => {
   assert.match(controlSource, /EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_word_address\(void\)/)
   assert.match(controlSource, /EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_waiting_word_address\(void\)/)
   assert.match(controlSource, /linuxlab_pause_waiting/)
   assert.match(controlSource, /cpu_get_clock\(\) - qatomic_read\(&linuxlab_virtual_clock_offset\)/)
   assert.match(controlSource, /cpu_get_ticks\(\) - qatomic_read\(&linuxlab_elapsed_ticks_offset\)/)
   assert.match(controlSource, /qatomic_store_release\(&linuxlab_pause_waiting, 1\)/)
-  assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
-  assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
+  assert.match(controlSource, /emscripten_thread_sleep\(1\)/)
+  assert.doesNotMatch(controlSource, /emscripten_atomic_wait_u32|ATOMICS_WAIT_DURATION_INFINITE/)
   assert.match(controlSource, /qatomic_store_release\(&linuxlab_pause_waiting, 0\)/)
   assert.doesNotMatch(controlSource, /EMSCRIPTEN_KEEPALIVE void linuxlab_pause\(void\)/)
   assert.doesNotMatch(controlSource, /EMSCRIPTEN_KEEPALIVE void linuxlab_resume\(void\)/)
