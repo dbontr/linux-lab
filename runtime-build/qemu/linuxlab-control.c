@@ -82,11 +82,13 @@ void linuxlab_vcpu_pause_wait(void)
         return;
     }
 
+    qatomic_store_release(&linuxlab_pause_waiting, 1);
     qatomic_set(&linuxlab_frozen_virtual_clock,
         cpu_get_clock() - qatomic_read(&linuxlab_virtual_clock_offset));
+    qatomic_store_release(&linuxlab_pause_waiting, 2);
     qatomic_set(&linuxlab_frozen_elapsed_ticks,
         cpu_get_ticks() - qatomic_read(&linuxlab_elapsed_ticks_offset));
-    qatomic_store_release(&linuxlab_pause_waiting, 1);
+    qatomic_store_release(&linuxlab_pause_waiting, 3);
     while (linuxlab_pause_requested()) {
         emscripten_thread_sleep(1);
     }
