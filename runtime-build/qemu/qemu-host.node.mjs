@@ -176,15 +176,14 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
 
-test('QEMU browser pause waits at the qemu-wasm dispatcher boundary', () => {
+test('QEMU browser pause services proxy calls at the qemu-wasm dispatcher boundary', () => {
   assert.match(controlSource, /linuxlab_pause_waiting/)
   assert.match(controlSource, /linuxlab_virtual_clock_offset/)
   assert.match(controlSource, /linuxlab_elapsed_ticks_offset/)
   assert.match(controlSource, /linuxlab_adjust_virtual_clock/)
   assert.match(controlSource, /linuxlab_adjust_elapsed_ticks/)
-  assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
-  assert.match(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
-  assert.match(controlSource, /emscripten_atomic_notify\(&linuxlab_paused, EMSCRIPTEN_NOTIFY_ALL_WAITERS\)/)
+  assert.match(controlSource, /emscripten_thread_sleep\(1\)/)
+  assert.doesNotMatch(controlSource, /emscripten_atomic_wait_u32|ATOMICS_WAIT_DURATION_INFINITE|emscripten_atomic_notify/)
   assert.doesNotMatch(controlSource, /cpu_disable_ticks\(\)|cpu_enable_ticks\(\)/)
   assert.doesNotMatch(controlSource, /linuxlab_pause_word_address|linuxlab_pause_waiting_word_address/)
   assert.doesNotMatch(controlSource, /cpu->stop|cpu->stopped|cpu_resume\(cpu\)|cpu_exit\(cpu\)|qemu_cpu_kick\(cpu\)|CPU_FOREACH/)
