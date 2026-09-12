@@ -64,43 +64,33 @@ test('QEMU boot arguments keep offline guests isolated from host shares', () => 
   assert.deepEqual(Array.from(args.slice(-2)), ['-boot', 'order=c'])
 })
 
-test('browser pause and resume use shared control words without Wasm calls', async () => {
+test('browser controls map to the exported QEMU control boundary', async () => {
   const context = loadHost()
   context.controlCalls = []
+  context.runState = 1
   vm.runInContext(`
-    controlBuffer = new SharedArrayBuffer(16);
     qemuModule = {
-      HEAPU8: new Uint8Array(controlBuffer),
       ccall: (name, ...args) => {
         controlCalls.push([name, ...args]);
-        if (name === 'linuxlab_pause_word_address') return 4;
-        if (name === 'linuxlab_pause_waiting_word_address') return 8;
+        if (name === 'linuxlab_pause') runState = 0;
+        if (name === 'linuxlab_resume') runState = 1;
+        if (name === 'linuxlab_is_running') return runState;
         if (name === 'linuxlab_send_text') return 0;
-        return 0;
       },
     };
-    qemuControlWords = bindControlWords(qemuModule);
   `, context)
 
-  const pause = vm.runInContext("handleControl({ action: 'pause' })", context)
-  vm.runInContext('Atomics.store(qemuControlWords.waiting, 0, 1)', context)
-  await pause
-  assert.equal(vm.runInContext('Atomics.load(qemuControlWords.pause, 0)', context), 1)
-
-  const resume = vm.runInContext("handleControl({ action: 'resume' })", context)
-  vm.runInContext('Atomics.store(qemuControlWords.waiting, 0, 0)', context)
-  await resume
-  assert.equal(vm.runInContext('Atomics.load(qemuControlWords.pause, 0)', context), 0)
-
+  await vm.runInContext("handleControl({ action: 'pause' })", context)
+  await vm.runInContext("handleControl({ action: 'resume' })", context)
   await vm.runInContext("handleControl({ action: 'send-text', text: 'hello' })", context)
-  const names = context.controlCalls.map((call) => call[0])
-  assert.deepEqual(names, [
-    'linuxlab_pause_word_address',
-    'linuxlab_pause_waiting_word_address',
+
+  const actions = context.controlCalls.filter((call) => call[0] !== 'linuxlab_is_running')
+  assert.deepEqual(actions.map((call) => call[0]), [
+    'linuxlab_pause',
+    'linuxlab_resume',
     'linuxlab_send_text',
   ])
-  assert.equal(names.includes('linuxlab_pause'), false)
-  assert.equal(names.includes('linuxlab_resume'), false)
+  assert.deepEqual(Array.from(actions[2][3]), ['hello'])
 })
 
 test('browser text control surfaces a busy QEMU input channel', async () => {
@@ -185,57 +175,26 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-
-test('QEMU browser pause returns self-loops to the dispatcher and preserves guest clocks', () => {
-  assert.match(controlSource, /linuxlab_pause_waiting/)
-  assert.match(controlSource, /linuxlab_virtual_clock_offset/)
-  assert.match(controlSource, /linuxlab_elapsed_ticks_offset/)
-  assert.match(controlSource, /linuxlab_frozen_virtual_clock/)
-  assert.match(controlSource, /linuxlab_frozen_elapsed_ticks/)
-  assert.match(controlSource, /linuxlab_adjust_virtual_clock/)
-  assert.match(controlSource, /linuxlab_adjust_elapsed_ticks/)
-  assert.match(controlSource, /linuxlab_pause_word_address/)
-  assert.match(controlSource, /linuxlab_pause_waiting_word_address/)
-  assert.match(controlSource, /qatomic_load_acquire\(&linuxlab_pause_waiting\)/)
-  assert.match(controlSource, /emscripten_atomic_wait_u32\(/)
-  assert.match(controlSource, /#define LINUXLAB_PAUSE_WAIT_NS 10000000ll/)
-  assert.match(controlSource, /LINUXLAB_PAUSE_WAIT_NS/)
-  assert.doesNotMatch(controlSource, /ATOMICS_WAIT_DURATION_INFINITE/)
-  assert.match(controlSource, /cpu_get_clock\(\) - qatomic_read\(&linuxlab_virtual_clock_offset\)/)
-  assert.match(controlSource, /cpu_get_ticks\(\) - qatomic_read\(&linuxlab_elapsed_ticks_offset\)/)
-  assert.doesNotMatch(controlSource, /EMSCRIPTEN_KEEPALIVE void linuxlab_pause\(|EMSCRIPTEN_KEEPALIVE void linuxlab_resume\(/)
-  assert.doesNotMatch(controlSource, /emscripten_atomic_notify\(/)
-  assert.doesNotMatch(controlSource, /cpu_disable_ticks\(\)|cpu_enable_ticks\(\)/)
-  assert.match(controlPatchSource, /const cpusPath = process\.argv\[4\]/)
-  assert.match(controlPatchSource, /const wasm32Path = process\.argv\[5\]/)
-  assert.match(controlPatchSource, /const wasmTargetPath = process\.argv\[6\]/)
-  assert.match(controlPatchSource, /linuxlab_adjust_virtual_clock\(cpus_accel->get_virtual_clock\(\)\)/)
-  assert.match(controlPatchSource, /linuxlab_adjust_elapsed_ticks\(cpus_accel->get_elapsed_ticks\(\)\)/)
-  assert.match(controlPatchSource, /dispatcherAnchor/)
-  assert.match(controlPatchSource, /linuxlab_vcpu_pause_wait\(\);\$\{wasm32Eol\}        trysleep\(\);/)
-  assert.match(controlPatchSource, /tciGotoTbAnchor/)
-  assert.match(controlPatchSource, /tciGotoPtrAnchor/)
-  assert.match(controlPatchSource, /gotoPtrSelfLoop/)
-  assert.match(controlPatchSource, /gotoTbSelfLoop/)
-  assert.match(controlPatchSource, /dispatcherReturn/)
-  assert.match(controlPatchSource, /tcg_wasm_out_ctx_i32_store_const\(s, DO_INIT_OFF, 1\)/)
-  assert.match(controlPatchSource, /tcg_wasm_out_op_i32_const\(s, 0\)/)
-  assert.match(controlPatchSource, /tcg_wasm_out_op_return\(s\)/)
-  assert.doesNotMatch(controlPatchSource, /linuxlab_pause_word_address|memory\.atomic\.wait32|tcg_wasm_out_linuxlab_pause_wait/)
-  assert.match(buildSource, /system\/cpus\.c/)
-  assert.match(buildSource, /tcg\/wasm32\.c/)
-  assert.match(buildSource, /tcg\/wasm32\/tcg-target\.c\.inc/)
+test('QEMU native pause owns vCPU and clock transitions', () => {
+  assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
+  assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
+  assert.match(controlSource, /qemu_bh_new\(linuxlab_text_bh, NULL\)/)
+  assert.match(controlSource, /qemu_bh_schedule\(linuxlab_pause_bh_handle\)/)
+  assert.match(controlSource, /qemu_bh_schedule\(linuxlab_resume_bh_handle\)/)
+  assert.match(controlSource, /qemu_bh_schedule\(linuxlab_text_bh_handle\)/)
+  assert.match(controlSource, /vm_stop\(RUN_STATE_PAUSED\)/)
+  assert.match(controlSource, /runstate_check\(RUN_STATE_PAUSED\)/)
+  assert.match(controlSource, /vm_start\(\)/)
+  assert.match(controlSource, /linuxlab_virtual_clock_ns/)
+  assert.match(controlSource, /linuxlab_elapsed_ticks/)
+  assert.match(controlSource, /cpus_get_virtual_clock\(\)/)
+  assert.match(controlSource, /cpus_get_elapsed_ticks\(\)/)
+  assert.doesNotMatch(controlSource, /aio_bh_schedule_oneshot/)
+  assert.doesNotMatch(controlSource, /g_new|g_strdup|g_free/)
+  assert.doesNotMatch(controlSource, /linuxlab_vcpu_pause_point|linuxlab_pause_requested/)
+  assert.doesNotMatch(controlSource, /emscripten_sleep|emscripten_atomic_wait|emscripten_futex/)
+  assert.doesNotMatch(controlPatchSource, /wasm32|linuxlab_vcpu_pause_point|tcg-accel-ops/)
   assert.match(buildSource, /patch-rr-wasm-init\.mjs/)
   assert.match(rrWasmPatchSource, /init_wasm32\(\);/)
-  assert.match(source, /tcg,thread=single,tb-size=500/)
-  assert.match(source, /SharedArrayBuffer/)
-  assert.match(source, /Atomics\.store\(words\.pause, 0, 1\)/)
-  assert.match(source, /Atomics\.store\(words\.pause, 0, 0\)/)
-  assert.match(source, /Atomics\.notify\(words\.pause, 0\)/)
-  assert.match(source, /Atomics\.load\(words\.waiting, 0\)/)
-  assert.doesNotMatch(source, /ccall\('linuxlab_pause'|ccall\('linuxlab_resume'|ccall\('linuxlab_is_running'/)
-  assert.doesNotMatch(source, /'-d', 'nochain'/)
-  assert.doesNotMatch(controlPatchSource, /cpuExecPath|tcg_tb_lookup/)
-  assert.doesNotMatch(controlSource, /cpu->stop|cpu->stopped|cpu_resume\(cpu\)|cpu_exit\(cpu\)|qemu_cpu_kick\(cpu\)|CPU_FOREACH/)
-  assert.doesNotMatch(controlSource, /vm_stop|vm_start|pause_all_vcpus|resume_all_vcpus/)
+  assert.doesNotMatch(controlSource, /cpu->stop|qemu_cpu_kick|pause_all_vcpus|resume_all_vcpus/)
 })

@@ -2,11 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 
 const mesonPath = process.argv[2]
 const mainPath = process.argv[3]
-const cpusPath = process.argv[4]
-const wasm32Path = process.argv[5]
-const wasmTargetPath = process.argv[6]
-if (!mesonPath || !mainPath || !cpusPath || !wasm32Path || !wasmTargetPath) {
-  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c> <system/cpus.c> <tcg/wasm32.c> <tcg/wasm32/tcg-target.c.inc>')
+if (!mesonPath || !mainPath) {
+  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c>')
 }
 
 const mesonSource = await readFile(mesonPath, 'utf8')
@@ -22,93 +19,12 @@ await writeFile(
 )
 
 const mainSource = await readFile(mainPath, 'utf8')
-const mainEol = mainSource.includes('\r\n') ? '\r\n' : '\n'
-const prototypeAnchor = `${mainEol}int qemu_default_main(void)`
-const callAnchor = `    qemu_init(argc, argv);${mainEol}    return qemu_main();`
+const eol = mainSource.includes('\r\n') ? '\r\n' : '\n'
+const prototypeAnchor = `${eol}int qemu_default_main(void)`
+const callAnchor = `    qemu_init(argc, argv);${eol}    return qemu_main();`
 if (!mainSource.includes(prototypeAnchor) || !mainSource.includes(callAnchor)) {
   throw new Error('QEMU main control anchors changed')
 }
-let patchedMain = mainSource.replace(
-  prototypeAnchor,
-  `${mainEol}void linuxlab_runtime_prepare(void);${mainEol}void linuxlab_runtime_ready(void);${mainEol}${mainEol}int qemu_default_main(void)`,
-)
-patchedMain = patchedMain.replace(
-  callAnchor,
-  `    linuxlab_runtime_prepare();${mainEol}    qemu_init(argc, argv);${mainEol}    linuxlab_runtime_ready();${mainEol}    return qemu_main();`,
-)
-await writeFile(mainPath, patchedMain, 'utf8')
-
-const cpusSource = await readFile(cpusPath, 'utf8')
-const cpusEol = cpusSource.includes('\r\n') ? '\r\n' : '\n'
-const clockPrototypeAnchor = `static const AccelOpsClass *cpus_accel;${cpusEol}`
-const virtualClockAnchor = `    if (cpus_accel && cpus_accel->get_virtual_clock) {${cpusEol}        return cpus_accel->get_virtual_clock();${cpusEol}    }${cpusEol}    return cpu_get_clock();`
-const elapsedTicksAnchor = `    if (cpus_accel->get_elapsed_ticks) {${cpusEol}        return cpus_accel->get_elapsed_ticks();${cpusEol}    }${cpusEol}    return cpu_get_ticks();`
-if (!cpusSource.includes(clockPrototypeAnchor) || !cpusSource.includes(virtualClockAnchor) || !cpusSource.includes(elapsedTicksAnchor)) throw new Error('QEMU CPU clock anchors changed')
-if (cpusSource.includes('linuxlab_adjust_virtual_clock')) throw new Error('Linux Lab clock adjustment is already registered')
-let patchedCpus = cpusSource.replace(
-  clockPrototypeAnchor,
-  `${clockPrototypeAnchor}${cpusEol}int64_t linuxlab_adjust_virtual_clock(int64_t raw_clock);${cpusEol}int64_t linuxlab_adjust_elapsed_ticks(int64_t raw_ticks);${cpusEol}`,
-)
-patchedCpus = patchedCpus.replace(
-  virtualClockAnchor,
-  `    if (cpus_accel && cpus_accel->get_virtual_clock) {${cpusEol}        return linuxlab_adjust_virtual_clock(cpus_accel->get_virtual_clock());${cpusEol}    }${cpusEol}    return linuxlab_adjust_virtual_clock(cpu_get_clock());`,
-)
-patchedCpus = patchedCpus.replace(
-  elapsedTicksAnchor,
-  `    if (cpus_accel->get_elapsed_ticks) {${cpusEol}        return linuxlab_adjust_elapsed_ticks(cpus_accel->get_elapsed_ticks());${cpusEol}    }${cpusEol}    return linuxlab_adjust_elapsed_ticks(cpu_get_ticks());`,
-)
-await writeFile(cpusPath, patchedCpus, 'utf8')
-
-const wasm32Source = await readFile(wasm32Path, 'utf8')
-const wasm32Eol = wasm32Source.includes('\r\n') ? '\r\n' : '\n'
-const wasm32DeclarationAnchor = `#include "wasm32.h"${wasm32Eol}`
-const dispatcherAnchor = `    while (true) {${wasm32Eol}        trysleep();`
-const tciGotoTbAnchor = `        case INDEX_op_goto_tb:${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);${wasm32Eol}            if (*(uint32_t **)ptr != 0) {${wasm32Eol}                tb_ptr = *(uint32_t **)ptr;${wasm32Eol}                ctx.tb_ptr = tb_ptr;`
-const tciGotoPtrAnchor = `            tb_ptr = ptr;${wasm32Eol}${wasm32Eol}            ctx.tb_ptr = tb_ptr;`
-if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(dispatcherAnchor) || !wasm32Source.includes(tciGotoTbAnchor) || !wasm32Source.includes(tciGotoPtrAnchor)) {
-  throw new Error('QEMU Wasm dispatcher pause anchors changed')
-}
-if (wasm32Source.includes('void linuxlab_vcpu_pause_wait(void);')) {
-  throw new Error('Linux Lab dispatcher pause hook is already registered')
-}
-let patchedWasm32 = wasm32Source.replace(
-  wasm32DeclarationAnchor,
-  `${wasm32DeclarationAnchor}${wasm32Eol}void linuxlab_vcpu_pause_wait(void);${wasm32Eol}`,
-)
-patchedWasm32 = patchedWasm32.replace(
-  dispatcherAnchor,
-  `    while (true) {${wasm32Eol}        linuxlab_vcpu_pause_wait();${wasm32Eol}        trysleep();`,
-)
-patchedWasm32 = patchedWasm32.replace(
-  tciGotoTbAnchor,
-  `${tciGotoTbAnchor}${wasm32Eol}                linuxlab_vcpu_pause_wait();`,
-)
-patchedWasm32 = patchedWasm32.replace(
-  tciGotoPtrAnchor,
-  `${tciGotoPtrAnchor}${wasm32Eol}            linuxlab_vcpu_pause_wait();`,
-)
-await writeFile(wasm32Path, patchedWasm32, 'utf8')
-
-const wasmSource = await readFile(wasmTargetPath, 'utf8')
-const wasmEol = wasmSource.includes('\r\n') ? '\r\n' : '\n'
-const gotoPtrSelfLoop = [
-  '    tcg_wasm_out_op_i64_const(s, 0);',
-  '    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);',
-  '    tcg_wasm_out_op_br(s, 2); // br to the top of loop',
-].join(wasmEol)
-const gotoTbSelfLoop = [
-  '    tcg_wasm_out_op_i64_const(s, 0);',
-  '    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);',
-  '    tcg_wasm_out_op_br(s, 3); // br to the top of loop',
-].join(wasmEol)
-const dispatcherReturn = [
-  '    tcg_wasm_out_ctx_i32_store_const(s, DO_INIT_OFF, 1);',
-  '    tcg_wasm_out_op_i32_const(s, 0);',
-  '    tcg_wasm_out_op_return(s);',
-].join(wasmEol)
-if (!wasmSource.includes(gotoPtrSelfLoop) || !wasmSource.includes(gotoTbSelfLoop)) {
-  throw new Error('QEMU Wasm self-loop chain anchors changed')
-}
-let patchedWasm = wasmSource.replace(gotoPtrSelfLoop, dispatcherReturn)
-patchedWasm = patchedWasm.replace(gotoTbSelfLoop, dispatcherReturn)
-await writeFile(wasmTargetPath, patchedWasm, 'utf8')
+let patched = mainSource.replace(prototypeAnchor, `${eol}void linuxlab_runtime_prepare(void);${eol}void linuxlab_runtime_ready(void);${eol}${eol}int qemu_default_main(void)`)
+patched = patched.replace(callAnchor, `    linuxlab_runtime_prepare();${eol}    qemu_init(argc, argv);${eol}    linuxlab_runtime_ready();${eol}    return qemu_main();`)
+await writeFile(mainPath, patched, 'utf8')

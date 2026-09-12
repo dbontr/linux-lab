@@ -2,25 +2,22 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
+#include "sysemu/cpus.h"
 #include "sysemu/cpu-timers.h"
 #include "sysemu/runstate.h"
 #include "ui/input.h"
 
-#include <emscripten/atomic.h>
 #include <emscripten/emscripten.h>
 
 #define LINUXLAB_TEXT_CAPACITY 4096
-#define LINUXLAB_PAUSE_WAIT_NS 10000000ll
 
+static void linuxlab_pause_bh(void *opaque);
+static void linuxlab_resume_bh(void *opaque);
 static void linuxlab_text_bh(void *opaque);
 
 static int linuxlab_ready;
-static uint32_t linuxlab_paused;
-static uint32_t linuxlab_pause_waiting;
-static int64_t linuxlab_virtual_clock_offset __attribute__((aligned(8)));
-static int64_t linuxlab_elapsed_ticks_offset __attribute__((aligned(8)));
-static int64_t linuxlab_frozen_virtual_clock __attribute__((aligned(8)));
-static int64_t linuxlab_frozen_elapsed_ticks __attribute__((aligned(8)));
+static QEMUBH *linuxlab_pause_bh_handle;
+static QEMUBH *linuxlab_resume_bh_handle;
 static QEMUBH *linuxlab_text_bh_handle;
 static char linuxlab_text_buffer[LINUXLAB_TEXT_CAPACITY];
 static uint32_t linuxlab_text_length;
@@ -35,73 +32,24 @@ void linuxlab_runtime_prepare(void)
 
 void linuxlab_runtime_ready(void)
 {
-    qatomic_store_release(&linuxlab_paused, 0);
-    qatomic_store_release(&linuxlab_pause_waiting, 0);
-    qatomic_set(&linuxlab_virtual_clock_offset, 0);
-    qatomic_set(&linuxlab_elapsed_ticks_offset, 0);
-    qatomic_set(&linuxlab_frozen_virtual_clock, 0);
-    qatomic_set(&linuxlab_frozen_elapsed_ticks, 0);
     qatomic_set(&linuxlab_text_length, 0);
     qatomic_set(&linuxlab_text_busy, 0);
+    linuxlab_pause_bh_handle = qemu_bh_new(linuxlab_pause_bh, NULL);
+    linuxlab_resume_bh_handle = qemu_bh_new(linuxlab_resume_bh, NULL);
     linuxlab_text_bh_handle = qemu_bh_new(linuxlab_text_bh, NULL);
     qatomic_set(&linuxlab_ready, 1);
 }
-bool linuxlab_pause_requested(void)
+
+EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
 {
-    return qatomic_load_acquire(&linuxlab_paused) != 0;
+    return qatomic_read(&linuxlab_ready) &&
+        (runstate_is_running() || runstate_check(RUN_STATE_PAUSED));
 }
 
-EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_word_address(void)
+EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
 {
-    return (uintptr_t)&linuxlab_paused;
+    return runstate_is_running() ? 1 : 0;
 }
-
-EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_waiting_word_address(void)
-{
-    return (uintptr_t)&linuxlab_pause_waiting;
-}
-
-int64_t linuxlab_adjust_virtual_clock(int64_t raw_clock)
-{
-    if (qatomic_load_acquire(&linuxlab_pause_waiting)) {
-        return qatomic_read(&linuxlab_frozen_virtual_clock);
-    }
-    return raw_clock - qatomic_read(&linuxlab_virtual_clock_offset);
-}
-
-int64_t linuxlab_adjust_elapsed_ticks(int64_t raw_ticks)
-{
-    if (qatomic_load_acquire(&linuxlab_pause_waiting)) {
-        return qatomic_read(&linuxlab_frozen_elapsed_ticks);
-    }
-    return raw_ticks - qatomic_read(&linuxlab_elapsed_ticks_offset);
-}
-
-void linuxlab_vcpu_pause_wait(void)
-{
-    if (!linuxlab_pause_requested()) {
-        return;
-    }
-
-    qatomic_set(&linuxlab_frozen_virtual_clock,
-        cpu_get_clock() - qatomic_read(&linuxlab_virtual_clock_offset));
-    qatomic_set(&linuxlab_frozen_elapsed_ticks,
-        cpu_get_ticks() - qatomic_read(&linuxlab_elapsed_ticks_offset));
-    qatomic_store_release(&linuxlab_pause_waiting, 1);
-    while (linuxlab_pause_requested()) {
-        emscripten_atomic_wait_u32(
-            &linuxlab_paused,
-            1,
-            LINUXLAB_PAUSE_WAIT_NS
-        );
-    }
-    qatomic_set(&linuxlab_virtual_clock_offset,
-        cpu_get_clock() - qatomic_read(&linuxlab_frozen_virtual_clock));
-    qatomic_set(&linuxlab_elapsed_ticks_offset,
-        cpu_get_ticks() - qatomic_read(&linuxlab_frozen_elapsed_ticks));
-    qatomic_store_release(&linuxlab_pause_waiting, 0);
-}
-
 
 EMSCRIPTEN_KEEPALIVE double linuxlab_virtual_clock_ns(void)
 {
@@ -113,18 +61,21 @@ EMSCRIPTEN_KEEPALIVE double linuxlab_elapsed_ticks(void)
     return (double)cpus_get_elapsed_ticks();
 }
 
-EMSCRIPTEN_KEEPALIVE int linuxlab_is_ready(void)
+static void linuxlab_pause_bh(void *opaque)
 {
-    return qatomic_read(&linuxlab_ready) && runstate_is_running()
-        && !linuxlab_pause_requested();
+    (void)opaque;
+    if (runstate_is_running()) {
+        vm_stop(RUN_STATE_PAUSED);
+    }
 }
 
-EMSCRIPTEN_KEEPALIVE int linuxlab_is_running(void)
+static void linuxlab_resume_bh(void *opaque)
 {
-    if (!runstate_is_running()) return 0;
-    return qatomic_load_acquire(&linuxlab_pause_waiting) == 0;
+    (void)opaque;
+    if (runstate_check(RUN_STATE_PAUSED)) {
+        vm_start();
+    }
 }
-
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {
     static const uint8_t letters[26] = {
@@ -186,6 +137,20 @@ static void linuxlab_text_bh(void *opaque)
     }
     qatomic_set(&linuxlab_text_length, 0);
     qatomic_set(&linuxlab_text_busy, 0);
+}
+
+EMSCRIPTEN_KEEPALIVE void linuxlab_pause(void)
+{
+    if (linuxlab_pause_bh_handle) {
+        qemu_bh_schedule(linuxlab_pause_bh_handle);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE void linuxlab_resume(void)
+{
+    if (linuxlab_resume_bh_handle) {
+        qemu_bh_schedule(linuxlab_resume_bh_handle);
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE int linuxlab_send_text(const char *text)

@@ -10,7 +10,6 @@ const networkBase = new URL('network/', qemuBase)
 let bootStarted = false
 let mediaObjectUrl = null
 let qemuModule = null
-let qemuControlWords = null
 
 function post(type, detail = {}) {
   parent.postMessage({ source: SOURCE, type, ...detail }, location.origin)
@@ -208,7 +207,6 @@ async function boot(request) {
       }
       void waitForQemuReady(moduleConfig).then(() => {
         if (startupReported) return
-        qemuControlWords = bindControlWords(moduleConfig)
         startupReported = true
         log.hidden = true
         screen.focus()
@@ -247,46 +245,19 @@ function updateOneDriveToken(token) {
   setOneDriveToken(qemuModule, token)
 }
 
-function bindControlWords(module) {
-  const buffer = module.HEAPU8?.buffer
-  if (!(buffer instanceof SharedArrayBuffer)) {
-    throw new Error('QEMU shared control memory is unavailable')
-  }
-  const address = (name) => Number(module.ccall(name, 'number', [], [])) >>> 0
-  const pauseAddress = address('linuxlab_pause_word_address')
-  const waitingAddress = address('linuxlab_pause_waiting_word_address')
-  if ((pauseAddress & 3) !== 0 || (waitingAddress & 3) !== 0) {
-    throw new Error('QEMU shared control words are misaligned')
-  }
-  return {
-    pause: new Int32Array(buffer, pauseAddress, 1),
-    waiting: new Int32Array(buffer, waitingAddress, 1),
-  }
-}
-
-function requireControlWords() {
-  if (!qemuControlWords) throw new Error('QEMU shared control interface is not ready')
-  return qemuControlWords
-}
-
 async function handleControl(request) {
   if (!qemuModule || typeof qemuModule.ccall !== 'function') {
     throw new Error('QEMU control interface is not ready')
   }
   switch (request.action) {
-    case 'pause': {
-      const words = requireControlWords()
-      Atomics.store(words.pause, 0, 1)
+    case 'pause':
+      qemuModule.ccall('linuxlab_pause', null, [], [])
       await waitForRunState(false)
       return
-    }
-    case 'resume': {
-      const words = requireControlWords()
-      Atomics.store(words.pause, 0, 0)
-      Atomics.notify(words.pause, 0)
+    case 'resume':
+      qemuModule.ccall('linuxlab_resume', null, [], [])
       await waitForRunState(true)
       return
-    }
     case 'send-text': {
       const result = qemuModule.ccall('linuxlab_send_text', 'number', ['string'], [String(request.text ?? '')])
       if (result === -2) throw new Error('QEMU text command is too long')
@@ -301,10 +272,9 @@ async function handleControl(request) {
 
 async function waitForRunState(running) {
   const deadline = Date.now() + CONTROL_STATE_TIMEOUT_MS
-  const words = requireControlWords()
-  const expectedWaiting = running ? 0 : 1
+  const expected = running ? 1 : 0
   while (Date.now() < deadline) {
-    if (Atomics.load(words.waiting, 0) === expectedWaiting) return
+    if (qemuModule.ccall('linuxlab_is_running', 'number', [], []) === expected) return
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error(`QEMU did not ${running ? 'resume' : 'pause'}`)
