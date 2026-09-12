@@ -62,17 +62,22 @@ await writeFile(cpusPath, patchedCpus, 'utf8')
 const wasm32Source = await readFile(wasm32Path, 'utf8')
 const wasm32Eol = wasm32Source.includes('\r\n') ? '\r\n' : '\n'
 const wasm32DeclarationAnchor = `#include "wasm32.h"${wasm32Eol}`
+const dispatcherAnchor = `    while (true) {${wasm32Eol}        trysleep();`
 const tciGotoTbAnchor = `        case INDEX_op_goto_tb:${wasm32Eol}            tci_args_l(insn, tb_ptr, &ptr);${wasm32Eol}            if (*(uint32_t **)ptr != 0) {${wasm32Eol}                tb_ptr = *(uint32_t **)ptr;${wasm32Eol}                ctx.tb_ptr = tb_ptr;`
 const tciGotoPtrAnchor = `            tb_ptr = ptr;${wasm32Eol}${wasm32Eol}            ctx.tb_ptr = tb_ptr;`
-if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(tciGotoTbAnchor) || !wasm32Source.includes(tciGotoPtrAnchor)) {
-  throw new Error('QEMU Wasm TCI pause anchors changed')
+if (!wasm32Source.includes(wasm32DeclarationAnchor) || !wasm32Source.includes(dispatcherAnchor) || !wasm32Source.includes(tciGotoTbAnchor) || !wasm32Source.includes(tciGotoPtrAnchor)) {
+  throw new Error('QEMU Wasm dispatcher pause anchors changed')
 }
 if (wasm32Source.includes('void linuxlab_vcpu_pause_wait(void);')) {
-  throw new Error('Linux Lab TCI pause hook is already registered')
+  throw new Error('Linux Lab dispatcher pause hook is already registered')
 }
 let patchedWasm32 = wasm32Source.replace(
   wasm32DeclarationAnchor,
   `${wasm32DeclarationAnchor}${wasm32Eol}void linuxlab_vcpu_pause_wait(void);${wasm32Eol}`,
+)
+patchedWasm32 = patchedWasm32.replace(
+  dispatcherAnchor,
+  `    while (true) {${wasm32Eol}        linuxlab_vcpu_pause_wait();${wasm32Eol}        trysleep();`,
 )
 patchedWasm32 = patchedWasm32.replace(
   tciGotoTbAnchor,
@@ -86,98 +91,25 @@ await writeFile(wasm32Path, patchedWasm32, 'utf8')
 
 const wasmSource = await readFile(wasmTargetPath, 'utf8')
 const wasmEol = wasmSource.includes('\r\n') ? '\r\n' : '\n'
-const wasmDeclarationAnchor = `#include "../tcg-pool.c.inc"${wasmEol}`
-const gotoPtrAnchor = `static void tcg_wasm_out_goto_ptr(TCGContext *s, TCGReg arg)${wasmEol}{`
-const gotoTbAnchor = `static void tcg_wasm_out_goto_tb(TCGContext *s, int which)${wasmEol}{`
-if (!wasmSource.includes(wasmDeclarationAnchor) || !wasmSource.includes(gotoPtrAnchor) || !wasmSource.includes(gotoTbAnchor)) {
-  throw new Error('QEMU Wasm generated-TB pause anchors changed')
-}
-if (wasmSource.includes('linuxlab_pause_word_address')) {
-  throw new Error('Linux Lab generated-TB pause guard is already registered')
-}
-
-const pauseEmitter = [
-  'static void tcg_wasm_out_linuxlab_atomic_prefix(TCGContext *s, uint32_t op)',
-  '{',
-  '    tcg_wasm_out8(s, 0xfe);',
-  '    tcg_wasm_out_leb128_uint32_t(s, op);',
-  '}',
-  '',
-  'static void tcg_wasm_out_linuxlab_atomic_memarg(TCGContext *s)',
-  '{',
-  '    tcg_wasm_out_leb128_uint32_t(s, 2); /* natural i32 alignment */',
-  '    tcg_wasm_out_leb128_uint32_t(s, 0); /* zero offset */',
-  '}',
-  '',
-  'static void tcg_wasm_out_linuxlab_pause_requested(TCGContext *s)',
-  '{',
-  '    tcg_wasm_out_op_i32_const(s, (int32_t)linuxlab_pause_word_address());',
-  '    tcg_wasm_out_linuxlab_atomic_prefix(s, 0x10); /* i32.atomic.load */',
-  '    tcg_wasm_out_linuxlab_atomic_memarg(s);',
-  '}',
-  '',
-  'static void tcg_wasm_out_linuxlab_waiting_store(TCGContext *s, int32_t value)',
-  '{',
-  '    tcg_wasm_out_op_i32_const(s, (int32_t)linuxlab_pause_waiting_word_address());',
-  '    tcg_wasm_out_op_i32_const(s, value);',
-  '    tcg_wasm_out_linuxlab_atomic_prefix(s, 0x17); /* i32.atomic.store */',
-  '    tcg_wasm_out_linuxlab_atomic_memarg(s);',
-  '}',
-  '',
-  'static void tcg_wasm_out_linuxlab_pause_wait(TCGContext *s)',
-  '{',
-  '    tcg_wasm_out_linuxlab_pause_requested(s);',
-  '    tcg_wasm_out_op_if_noret(s);',
-  '    tcg_wasm_out_linuxlab_waiting_store(s, 1);',
-  '    tcg_wasm_out8(s, 0x02); /* block */',
-  '    tcg_wasm_out8(s, 0x40); /* empty block type */',
-  '    tcg_wasm_out8(s, 0x03); /* loop */',
-  '    tcg_wasm_out8(s, 0x40); /* empty block type */',
-  '    tcg_wasm_out_op_i32_const(s, (int32_t)linuxlab_pause_word_address());',
-  '    tcg_wasm_out_op_i32_const(s, 1);',
-  '    tcg_wasm_out_op_i64_const(s, -1);',
-  '    tcg_wasm_out_linuxlab_atomic_prefix(s, 0x01); /* memory.atomic.wait32 */',
-  '    tcg_wasm_out_linuxlab_atomic_memarg(s);',
-  '    tcg_wasm_out8(s, 0x1a); /* drop wait result */',
-  '    tcg_wasm_out_linuxlab_pause_requested(s);',
-  '    tcg_wasm_out_op_i32_eqz(s);',
-  '    tcg_wasm_out8(s, 0x0d); /* br_if */',
-  '    tcg_wasm_out8(s, 0x01); /* leave block */',
-  '    tcg_wasm_out_op_br(s, 0); /* retry after a spurious wake */',
-  '    tcg_wasm_out_op_end(s); /* loop */',
-  '    tcg_wasm_out_op_end(s); /* block */',
-  '    tcg_wasm_out_linuxlab_waiting_store(s, 0);',
-  '    tcg_wasm_out_op_end(s); /* if paused */',
-  '}',
-  '',
-].join(wasmEol)
-
-let patchedWasm = wasmSource.replace(
-  wasmDeclarationAnchor,
-  `${wasmDeclarationAnchor}${wasmEol}uintptr_t linuxlab_pause_word_address(void);${wasmEol}uintptr_t linuxlab_pause_waiting_word_address(void);${wasmEol}`,
-)
-patchedWasm = patchedWasm.replace(gotoPtrAnchor, `${pauseEmitter}${gotoPtrAnchor}`)
-
-function guardFastChain(source, functionAnchor, loopBranch) {
-  const start = source.indexOf(functionAnchor)
-  const bodyStart = start + functionAnchor.length
-  const end = source.indexOf(`${wasmEol}}${wasmEol}`, bodyStart)
-  if (start < 0 || end < 0) throw new Error('QEMU Wasm chain function boundary changed')
-  const body = source.slice(bodyStart, end)
-  if (!body.includes(loopBranch)) throw new Error(`QEMU Wasm loop branch changed: ${loopBranch}`)
-  const guardedBody = body.replace(loopBranch, `    tcg_wasm_out_linuxlab_pause_wait(s);${wasmEol}${loopBranch}`)
-  return `${source.slice(0, bodyStart)}${guardedBody}${source.slice(end)}`
-}
-
-patchedWasm = guardFastChain(
-  patchedWasm,
-  gotoPtrAnchor,
+const gotoPtrSelfLoop = [
+  '    tcg_wasm_out_op_i64_const(s, 0);',
+  '    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);',
   '    tcg_wasm_out_op_br(s, 2); // br to the top of loop',
-)
-patchedWasm = guardFastChain(
-  patchedWasm,
-  gotoTbAnchor,
+].join(wasmEol)
+const gotoTbSelfLoop = [
+  '    tcg_wasm_out_op_i64_const(s, 0);',
+  '    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);',
   '    tcg_wasm_out_op_br(s, 3); // br to the top of loop',
-)
-
+].join(wasmEol)
+const dispatcherReturn = [
+  '    tcg_wasm_out_op_i64_const(s, 0);',
+  '    tcg_wasm_out_op_global_set(s, BLOCK_PTR_IDX);',
+  '    tcg_wasm_out_op_i32_const(s, 0);',
+  '    tcg_wasm_out_op_return(s);',
+].join(wasmEol)
+if (!wasmSource.includes(gotoPtrSelfLoop) || !wasmSource.includes(gotoTbSelfLoop)) {
+  throw new Error('QEMU Wasm self-loop chain anchors changed')
+}
+let patchedWasm = wasmSource.replace(gotoPtrSelfLoop, dispatcherReturn)
+patchedWasm = patchedWasm.replace(gotoTbSelfLoop, dispatcherReturn)
 await writeFile(wasmTargetPath, patchedWasm, 'utf8')

@@ -62,16 +62,6 @@ int64_t linuxlab_adjust_elapsed_ticks(int64_t raw_ticks)
     return raw_ticks - qatomic_read(&linuxlab_elapsed_ticks_offset);
 }
 
-uintptr_t linuxlab_pause_word_address(void)
-{
-    return (uintptr_t)&linuxlab_paused;
-}
-
-uintptr_t linuxlab_pause_waiting_word_address(void)
-{
-    return (uintptr_t)&linuxlab_pause_waiting;
-}
-
 void linuxlab_vcpu_pause_wait(void)
 {
     if (!linuxlab_pause_requested()) {
