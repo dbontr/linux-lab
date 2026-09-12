@@ -52,6 +52,12 @@ jobs:
         with:
           path: public/qemu
           key: ${{ steps.qemu-key.outputs.key }}
+      - name: Upload QEMU diagnostic runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-diagnostic-runtime
+          path: public/qemu
+          retention-days: 1
       - name: Instrument QEMU longjmp diagnostics
         run: node scripts/diagnose-qemu-longjmp.mjs public/qemu/out.js public/qemu/qemu-system-x86_64.worker.js
       - run: npm test
