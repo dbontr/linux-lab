@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: public/qemu
-          key: ${{ steps.qemu-key.outputs.key }}
+          key: qemu-wasm-Linux-206bf34d3268d81c31876d70956fefae78d2ba10f564ebb5e7be8a1cc055608e
       - name: Build x86-64 QEMU runtime
         if: steps.qemu-cache.outputs.cache-hit != 'true'
         run: bash runtime-build/qemu/build.sh
@@ -51,7 +51,13 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: public/qemu
-          key: ${{ steps.qemu-key.outputs.key }}
+          key: qemu-wasm-Linux-206bf34d3268d81c31876d70956fefae78d2ba10f564ebb5e7be8a1cc055608e
+      - name: Upload QEMU diagnostic runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-diagnostic-runtime
+          path: public/qemu
+          retention-days: 1
       - name: Instrument QEMU longjmp diagnostics
         run: node scripts/diagnose-qemu-longjmp.mjs public/qemu/out.js public/qemu/qemu-system-x86_64.worker.js
       - run: npm test
