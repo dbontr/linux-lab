@@ -172,6 +172,12 @@ function initializeAtomicControl(module) {
     store: (address, value) => module.linuxLabAtomicStore32(address, value),
     notify: (address) => module.linuxLabAtomicNotify32(address),
   }
+  globalThis.__linuxLabPauseDebug = () => ({
+    pausedAddress: paused,
+    waitingAddress: waiting,
+    paused: qemuControl.load(paused),
+    waiting: qemuControl.load(waiting),
+  })
 }
 
 function requireAtomicControl() {

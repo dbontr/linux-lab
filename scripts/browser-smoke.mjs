@@ -146,12 +146,9 @@ async function waitForStatus(page, pattern, timeout = 60_000) {
       }
       let sharedControl = null
       try {
-        if (typeof qemuControl === 'object' && qemuControl) {
-          sharedControl = {
-            paused: qemuControl.load(qemuControl.paused),
-            waiting: qemuControl.load(qemuControl.waiting),
-          }
-        }
+        sharedControl = typeof globalThis.__linuxLabPauseDebug === 'function'
+          ? globalThis.__linuxLabPauseDebug()
+          : null
       } catch (controlError) {
         sharedControl = `error: ${controlError instanceof Error ? controlError.message : String(controlError)}`
       }
