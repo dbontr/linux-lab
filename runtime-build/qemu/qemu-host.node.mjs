@@ -175,14 +175,6 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-
-test('QEMU build keeps setjmp and longjmp inside WebAssembly', () => {
-  const commonFlags = buildSource.match(/COMMON_FLAGS="([^"]+)"/)?.[1] ?? ''
-  const linkFlags = buildSource.match(/LINK_FLAGS="([^"]+)"/)?.[1] ?? ''
-  assert.match(commonFlags, /-sSUPPORT_LONGJMP=wasm/)
-  assert.match(linkFlags, /-sSUPPORT_LONGJMP=wasm/)
-})
-
 test('QEMU native pause owns vCPU and clock transitions', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)

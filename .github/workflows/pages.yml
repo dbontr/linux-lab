@@ -52,6 +52,8 @@ jobs:
         with:
           path: public/qemu
           key: ${{ steps.qemu-key.outputs.key }}
+      - name: Instrument QEMU longjmp diagnostics
+        run: node scripts/diagnose-qemu-longjmp.mjs public/qemu/out.js public/qemu/qemu-system-x86_64.worker.js
       - run: npm test
       - run: npm run build
       - name: Install Chromium for browser smoke
