@@ -3,10 +3,11 @@ import { readFile, writeFile } from 'node:fs/promises'
 const mesonPath = process.argv[2]
 const mainPath = process.argv[3]
 const cpuExecPath = process.argv[4]
-const wasm32Path = process.argv[5]
-const wasmTargetPath = process.argv[6]
-if (!mesonPath || !mainPath || !cpuExecPath || !wasm32Path || !wasmTargetPath) {
-  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c> <accel/tcg/cpu-exec.c> <tcg/wasm32.c> <tcg/wasm32/tcg-target.c.inc>')
+const rrPath = process.argv[5]
+const wasm32Path = process.argv[6]
+const wasmTargetPath = process.argv[7]
+if (!mesonPath || !mainPath || !cpuExecPath || !rrPath || !wasm32Path || !wasmTargetPath) {
+  throw new Error('usage: patch-control.mjs <system/meson.build> <system/main.c> <accel/tcg/cpu-exec.c> <accel/tcg/tcg-accel-ops-rr.c> <tcg/wasm32.c> <tcg/wasm32/tcg-target.c.inc>')
 }
 
 const mesonSource = await readFile(mesonPath, 'utf8')
@@ -45,18 +46,38 @@ const execLoopAnchor = `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${
 if (!cpuExecSource.includes(cpuExecDeclarationAnchor) || !cpuExecSource.includes(execLoopAnchor)) {
   throw new Error('QEMU CPU execution pause anchors changed')
 }
-if (cpuExecSource.includes('void linuxlab_vcpu_pause_wait(void);')) {
+if (cpuExecSource.includes('bool linuxlab_vcpu_pause_wait(void);')) {
   throw new Error('Linux Lab CPU pause hook is already registered')
 }
 let patchedCpuExec = cpuExecSource.replace(
   cpuExecDeclarationAnchor,
-  `${cpuExecDeclarationAnchor}${cpuExecEol}void linuxlab_vcpu_pause_wait(void);${cpuExecEol}`,
+  `${cpuExecDeclarationAnchor}${cpuExecEol}bool linuxlab_vcpu_pause_wait(void);${cpuExecEol}`,
 )
 patchedCpuExec = patchedCpuExec.replace(
   execLoopAnchor,
-  `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${cpuExecEol}            linuxlab_vcpu_pause_wait();${cpuExecEol}            TranslationBlock *tb;`,
+  `        while (!cpu_handle_interrupt(cpu, &last_tb)) {${cpuExecEol}            if (linuxlab_vcpu_pause_wait()) {${cpuExecEol}                cpu->exception_index = EXCP_INTERRUPT;${cpuExecEol}                break;${cpuExecEol}            }${cpuExecEol}            TranslationBlock *tb;`,
 )
 await writeFile(cpuExecPath, patchedCpuExec, 'utf8')
+
+const rrSource = await readFile(rrPath, 'utf8')
+const rrEol = rrSource.includes('\r\n') ? '\r\n' : '\n'
+const rrDeclarationAnchor = `#include "tcg-accel-ops-icount.h"${rrEol}`
+const rrResumeAnchor = `                r = tcg_cpus_exec(cpu);${rrEol}                if (icount_enabled()) {${rrEol}                    icount_process_data(cpu);${rrEol}                }${rrEol}                qemu_mutex_lock_iothread();`
+if (!rrSource.includes(rrDeclarationAnchor) || !rrSource.includes(rrResumeAnchor)) {
+  throw new Error('QEMU RR resume anchors changed')
+}
+if (rrSource.includes('void linuxlab_vcpu_resume_finish(void);')) {
+  throw new Error('Linux Lab RR resume hook is already registered')
+}
+let patchedRr = rrSource.replace(
+  rrDeclarationAnchor,
+  `${rrDeclarationAnchor}${rrEol}void linuxlab_vcpu_resume_finish(void);${rrEol}`,
+)
+patchedRr = patchedRr.replace(
+  rrResumeAnchor,
+  `${rrResumeAnchor}${rrEol}                linuxlab_vcpu_resume_finish();`,
+)
+await writeFile(rrPath, patchedRr, 'utf8')
 
 const wasm32Source = await readFile(wasm32Path, 'utf8')
 const wasm32Eol = wasm32Source.includes('\r\n') ? '\r\n' : '\n'

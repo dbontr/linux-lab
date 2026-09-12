@@ -12,14 +12,12 @@
 #define LINUXLAB_TEXT_CAPACITY 4096
 
 static void linuxlab_pause_bh(void *opaque);
-static void linuxlab_resume_bh(void *opaque);
 static void linuxlab_text_bh(void *opaque);
 
 static int linuxlab_ready;
 static uint32_t linuxlab_paused;
 static uint32_t linuxlab_pause_waiters;
 static QEMUBH *linuxlab_pause_bh_handle;
-static QEMUBH *linuxlab_resume_bh_handle;
 static QEMUBH *linuxlab_text_bh_handle;
 static char linuxlab_text_buffer[LINUXLAB_TEXT_CAPACITY];
 static uint32_t linuxlab_text_length;
@@ -39,7 +37,6 @@ void linuxlab_runtime_ready(void)
     qatomic_set(&linuxlab_text_length, 0);
     qatomic_set(&linuxlab_text_busy, 0);
     linuxlab_pause_bh_handle = qemu_bh_new(linuxlab_pause_bh, NULL);
-    linuxlab_resume_bh_handle = qemu_bh_new(linuxlab_resume_bh, NULL);
     linuxlab_text_bh_handle = qemu_bh_new(linuxlab_text_bh, NULL);
     qatomic_set(&linuxlab_ready, 1);
 }
@@ -49,21 +46,36 @@ bool linuxlab_pause_requested(void)
     return qatomic_load_acquire(&linuxlab_paused) != 0;
 }
 
-uintptr_t linuxlab_pause_word_address(void)
+EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_word_address(void)
 {
     return (uintptr_t)&linuxlab_paused;
 }
 
-void linuxlab_vcpu_pause_wait(void)
+EMSCRIPTEN_KEEPALIVE uintptr_t linuxlab_pause_waiters_word_address(void)
+{
+    return (uintptr_t)&linuxlab_pause_waiters;
+}
+
+bool linuxlab_vcpu_pause_wait(void)
 {
     if (!linuxlab_pause_requested()) {
-        return;
+        return false;
     }
 
     qatomic_inc(&linuxlab_pause_waiters);
     while (linuxlab_pause_requested()) {
         emscripten_futex_wait(&linuxlab_paused, 1, 1.0);
     }
+    return true;
+}
+
+void linuxlab_vcpu_resume_finish(void)
+{
+    if (qatomic_read(&linuxlab_pause_waiters) == 0) {
+        return;
+    }
+
+    cpu_enable_ticks();
     qatomic_dec(&linuxlab_pause_waiters);
 }
 
@@ -102,17 +114,6 @@ static void linuxlab_pause_bh(void *opaque)
     qatomic_store_release(&linuxlab_paused, 1);
 }
 
-static void linuxlab_resume_bh(void *opaque)
-{
-    (void)opaque;
-    if (!runstate_is_running() || !linuxlab_pause_requested()) {
-        return;
-    }
-
-    cpu_enable_ticks();
-    qatomic_store_release(&linuxlab_paused, 0);
-    emscripten_futex_wake(&linuxlab_paused, INT_MAX);
-}
 static int linuxlab_scan_code(unsigned char ch, bool *shift)
 {
     static const uint8_t letters[26] = {
@@ -180,13 +181,6 @@ EMSCRIPTEN_KEEPALIVE void linuxlab_pause(void)
 {
     if (linuxlab_pause_bh_handle) {
         qemu_bh_schedule(linuxlab_pause_bh_handle);
-    }
-}
-
-EMSCRIPTEN_KEEPALIVE void linuxlab_resume(void)
-{
-    if (linuxlab_resume_bh_handle) {
-        qemu_bh_schedule(linuxlab_resume_bh_handle);
     }
 }
 
