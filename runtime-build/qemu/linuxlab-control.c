@@ -10,6 +10,7 @@
 #include <emscripten/emscripten.h>
 
 #define LINUXLAB_TEXT_CAPACITY 4096
+#define LINUXLAB_PAUSE_WAIT_MS 10.0
 
 static void linuxlab_text_bh(void *opaque);
 
@@ -91,7 +92,7 @@ void linuxlab_vcpu_pause_wait(void)
         emscripten_atomic_wait_u32(
             &linuxlab_paused,
             1,
-            ATOMICS_WAIT_DURATION_INFINITE
+            LINUXLAB_PAUSE_WAIT_MS
         );
     }
     qatomic_set(&linuxlab_virtual_clock_offset,
