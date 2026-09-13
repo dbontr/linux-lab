@@ -7,8 +7,6 @@ const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
 const rrWasmPatchSource = readFileSync(new URL('./patch-rr-wasm-init.mjs', import.meta.url), 'utf8')
-const wasmAsyncifyPatchSource = readFileSync(new URL('./patch-wasm-asyncify.mjs', import.meta.url), 'utf8')
-const wasmTciOnlyPatchSource = readFileSync(new URL('./patch-wasm-tci-only.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
 
@@ -177,21 +175,6 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
-test('QEMU generated helpers preserve Asyncify unwind and rewind state', () => {
-  assert.match(buildSource, /patch-wasm-asyncify\.mjs/)
-  assert.match(wasmAsyncifyPatchSource, /Asyncify\.State\.Unwinding/)
-  assert.match(wasmAsyncifyPatchSource, /CHECK_UNWINDING_IDX/)
-  assert.match(wasmAsyncifyPatchSource, /func_idx \+ 1/)
-  assert.match(wasmAsyncifyPatchSource, /num_helper_funcs \+ 2/)
-})
-
-test('QEMU keeps longjmp-capable TB execution in the primary Wasm module', () => {
-  assert.match(buildSource, /patch-wasm-tci-only\.mjs/)
-  assert.match(wasmTciOnlyPatchSource, /linuxlab_dynamic_tb_instantiation = false/)
-  assert.match(wasmTciOnlyPatchSource, /res = tcg_qemu_tb_exec_tci\(env\)/)
-  assert.match(wasmTciOnlyPatchSource, /setjmp\/longjmp control flow inside the primary Emscripten module/)
-})
-
 test('QEMU native pause owns vCPU and clock transitions', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)

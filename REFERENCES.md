@@ -9,7 +9,6 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [v86 networking documentation](https://github.com/copy/v86/blob/master/docs/networking.md) — browser network backends and guest NIC behavior.
 - [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/Wasm runtime used by the 32-bit backend.
 - [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) — QEMU system emulation compiled to WebAssembly; Linux Lab pins commit `0ef7b4e2814b231705d8371dd7997f5b72e70baf` for the x86-64 backend.
-- [qemu-wasm helper/coroutine Asyncify fix](https://github.com/ktock/qemu-wasm/commit/18770eb1458b4824b97608563ce6a65dc381e994) — upstream generated-Wasm helper unwind/rewind handling backported to the pinned wasm32 backend so helper-triggered Fiber switches propagate Asyncify unwinding before Resume.
 - [qemu-wasm browser networking example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/networking) — browser-side QEMU socket networking and guest proxy/certificate setup.
 - [qemu-wasm VM run-state control](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/system/cpus.c) — `vm_stop()`, `vm_start()`, and QEMU clock transitions provide the native Pause/Resume boundary used by Linux Lab.
 - [qemu-wasm run-state model](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/system/runstate.c) — authoritative QEMU run-state transitions, including `RUN_STATE_PAUSED`.
@@ -22,7 +21,6 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [SDL 2.24.2 Emscripten framebuffer](https://github.com/libsdl-org/SDL/blob/55b03c7493a7abed33cf803d1380a40fa8af903f/src/video/emscripten/SDL_emscriptenframebuffer.c) — pinned software-renderer framebuffer source used by QEMU's `gl=off` display; Linux Lab treats zero-area frames as no-op presentation and Canvas 2D presents valid frames on the main thread.
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
-- [Emscripten setjmp-longjmp support](https://emscripten.org/docs/porting/setjmp-longjmp.html) — `setjmp`/`longjmp` calling-environment requirements and Emscripten longjmp support modes.
 - [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread and WebAssembly runtime settings used by the QEMU browser build.
 - [Emscripten Asyncify](https://emscripten.org/docs/porting/asyncify.html) — asynchronous call support retained by the pinned qemu-wasm build for its existing FFI integration.
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
@@ -73,7 +71,6 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - QEMU browser builds use Emscripten `dlmalloc` so allocator integrity and predictable threaded I/O behavior take priority over allocator-level contention scaling.
 - The QEMU browser profile is explicitly single-vCPU and single-thread TCG. Pause and Resume are scheduled through persistent QEMU bottom halves and use QEMU's native `vm_stop(RUN_STATE_PAUSED)` and `vm_start()` transitions, which freeze and resume guest time through QEMU's normal run-state machinery.
 - The x86-64 RR vCPU thread calls `init_wasm32()` before executing translated blocks so generated-Wasm dispatcher state exists when a paused VM resumes or the RR thread is recreated. Browser control calls do not allocate QEMU objects; text input uses its own persistent QEMU bottom half.
-- The x86-64 backend executes translation blocks through the in-module TCI path. Separately instantiated Wasm TB modules are disabled because QEMU's `cpu_loop_exit` uses `setjmp`/`longjmp`, and the matching Emscripten calling environment must remain on the active call stack.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.

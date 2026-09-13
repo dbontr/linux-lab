@@ -237,19 +237,14 @@ async function smokeQemu(page) {
   assert(advancedClock.virtualNs > runningClock.virtualNs, 'QEMU virtual clock did not advance while running')
   assert(advancedClock.elapsedTicks > runningClock.elapsedTicks, 'QEMU elapsed ticks did not advance while running')
 
-  console.log('QEMU smoke phase: pause click')
   await page.locator('[data-pause]').click()
   await waitForStatus(page, 'is stopped', 10_000)
-  console.log('QEMU smoke phase: stopped acknowledged')
   assert.equal(await page.locator('[data-pause]').textContent(), 'Resume')
   const pausedClock = await sampleQemuClocks(qemuFrame)
   await page.waitForTimeout(150)
   const stillPausedClock = await sampleQemuClocks(qemuFrame)
   assert.equal(stillPausedClock.virtualNs, pausedClock.virtualNs, 'QEMU virtual clock advanced while paused')
   assert.equal(stillPausedClock.elapsedTicks, pausedClock.elapsedTicks, 'QEMU elapsed ticks advanced while paused')
-  console.log('QEMU smoke phase: paused clocks stable')
-  await page.waitForTimeout(1000)
-  console.log('QEMU smoke phase: resume click')
 
   await page.locator('[data-pause]').click()
   await waitForStatus(page, 'is running', 10_000)
@@ -267,7 +262,7 @@ async function smokeQemu(page) {
   await page.locator('[data-custom-submit]').click()
   await page.locator('[data-boot]').click()
   await waitForStatus(page, 'is running', 90_000)
-  await page.locator('[data-session-name]').filter({ hasText: 'TinyCore-11.0.iso' }).waitFor()
+  assert.equal(await page.locator('[data-session-name]').textContent(), 'TinyCore-11.0')
   const customFrame = page.frames().find((candidate) => candidate.url().includes('/runtime/qemu-host.html'))
   assert(customFrame, 'QEMU custom-media frame is missing')
   const args = await customFrame.evaluate(() => window.Module.arguments)
@@ -285,10 +280,6 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const pageErrors = []
-  page.on('console', (message) => {
-    const text = message.text()
-    if (text.includes('LINUXLAB_LONGJMP_STACK')) console.error('Browser diagnostic console:', text)
-  })
   page.on('pageerror', (error) => {
     pageErrors.push(error)
     console.error('Browser page error:', {
@@ -301,7 +292,7 @@ try {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').first().waitFor({ timeout: 10_000 })
   assert.equal(await page.evaluate(() => crossOriginIsolated), true)
-  if (process.env.LINUX_LAB_DIAG_QEMU_ONLY !== '1') await smokeV86(page, pageErrors)
+  await smokeV86(page, pageErrors)
   if (runQemu) await smokeQemu(page)
   assert.deepEqual(pageErrors.map((error) => error.message), [])
   console.log(`Browser smoke passed: v86${runQemu ? ' + QEMU x86-64 controls/OneDrive' : ''}`)
