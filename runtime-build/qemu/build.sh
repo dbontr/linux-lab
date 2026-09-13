@@ -34,6 +34,10 @@ mkdir -p "$WORK_DIR" "$OUTPUT_DIR" "$PACK_DIR"
 git clone --filter=blob:none --no-checkout https://github.com/ktock/qemu-wasm.git "$SOURCE_DIR"
 git -C "$SOURCE_DIR" checkout --detach "$QEMU_COMMIT"
 node "$SCRIPT_DIR/patch-upstream.mjs" "$SOURCE_DIR/Dockerfile"
+node "$SCRIPT_DIR/patch-wasm-asyncify.mjs" \
+  "$SOURCE_DIR/tcg/wasm32.c" \
+  "$SOURCE_DIR/tcg/tcg.c" \
+  "$SOURCE_DIR/tcg/wasm32/tcg-target.c.inc"
 cp "$SCRIPT_DIR/linuxlab-media.c" "$SOURCE_DIR/block/linuxlab-media.c"
 node "$SCRIPT_DIR/patch-browser-media.mjs" "$SOURCE_DIR/block/meson.build"
 cp "$SCRIPT_DIR/linuxlab-onedrive.c" "$SOURCE_DIR/hw/9pfs/linuxlab-onedrive.c"

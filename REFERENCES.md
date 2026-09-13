@@ -9,6 +9,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [v86 networking documentation](https://github.com/copy/v86/blob/master/docs/networking.md) — browser network backends and guest NIC behavior.
 - [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/Wasm runtime used by the 32-bit backend.
 - [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) — QEMU system emulation compiled to WebAssembly; Linux Lab pins commit `0ef7b4e2814b231705d8371dd7997f5b72e70baf` for the x86-64 backend.
+- [qemu-wasm helper/coroutine Asyncify fix](https://github.com/ktock/qemu-wasm/commit/18770eb1458b4824b97608563ce6a65dc381e994) — upstream generated-Wasm helper unwind/rewind handling backported to the pinned wasm32 backend so helper-triggered Fiber switches propagate Asyncify unwinding before Resume.
 - [qemu-wasm browser networking example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/networking) — browser-side QEMU socket networking and guest proxy/certificate setup.
 - [qemu-wasm VM run-state control](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/system/cpus.c) — `vm_stop()`, `vm_start()`, and QEMU clock transitions provide the native Pause/Resume boundary used by Linux Lab.
 - [qemu-wasm run-state model](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/system/runstate.c) — authoritative QEMU run-state transitions, including `RUN_STATE_PAUSED`.

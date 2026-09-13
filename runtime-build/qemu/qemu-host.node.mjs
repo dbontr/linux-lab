@@ -7,6 +7,7 @@ const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
 const rrWasmPatchSource = readFileSync(new URL('./patch-rr-wasm-init.mjs', import.meta.url), 'utf8')
+const wasmAsyncifyPatchSource = readFileSync(new URL('./patch-wasm-asyncify.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
 
@@ -174,6 +175,13 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.doesNotMatch(buildSource, /-sMALLOC=mimalloc/)
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
+})
+test('QEMU generated helpers preserve Asyncify unwind and rewind state', () => {
+  assert.match(buildSource, /patch-wasm-asyncify\.mjs/)
+  assert.match(wasmAsyncifyPatchSource, /Asyncify\.State\.Unwinding/)
+  assert.match(wasmAsyncifyPatchSource, /CHECK_UNWINDING_IDX/)
+  assert.match(wasmAsyncifyPatchSource, /func_idx \+ 1/)
+  assert.match(wasmAsyncifyPatchSource, /num_helper_funcs \+ 2/)
 })
 test('QEMU native pause owns vCPU and clock transitions', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
