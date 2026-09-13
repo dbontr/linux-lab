@@ -245,34 +245,18 @@ function updateOneDriveToken(token) {
   setOneDriveToken(qemuModule, token)
 }
 
-async function setLongjmpTrace(enabled) {
-  const workers = qemuModule?.PThread?.runningWorkers ?? []
-  for (const worker of workers) worker.postMessage({ cmd: 'linuxlabLongjmpTrace', enabled })
-  if (enabled && workers.length > 0) await new Promise((resolve) => setTimeout(resolve, 100))
-}
-
 async function handleControl(request) {
   if (!qemuModule || typeof qemuModule.ccall !== 'function') {
     throw new Error('QEMU control interface is not ready')
   }
   switch (request.action) {
     case 'pause':
-      await setLongjmpTrace(true)
-      try {
-        qemuModule.ccall('linuxlab_pause', null, [], [])
-        await waitForRunState(false)
-      } finally {
-        await setLongjmpTrace(false)
-      }
+      qemuModule.ccall('linuxlab_pause', null, [], [])
+      await waitForRunState(false)
       return
     case 'resume':
-      await setLongjmpTrace(true)
-      try {
-        qemuModule.ccall('linuxlab_resume', null, [], [])
-        await waitForRunState(true)
-      } finally {
-        await setLongjmpTrace(false)
-      }
+      qemuModule.ccall('linuxlab_resume', null, [], [])
+      await waitForRunState(true)
       return
     case 'send-text': {
       const result = qemuModule.ccall('linuxlab_send_text', 'number', ['string'], [String(request.text ?? '')])

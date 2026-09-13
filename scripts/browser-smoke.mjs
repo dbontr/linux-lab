@@ -296,7 +296,7 @@ try {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.locator('.distro-card').first().waitFor({ timeout: 10_000 })
   assert.equal(await page.evaluate(() => crossOriginIsolated), true)
-  await smokeV86(page, pageErrors)
+  if (process.env.LINUX_LAB_DIAG_QEMU_ONLY !== '1') await smokeV86(page, pageErrors)
   if (runQemu) await smokeQemu(page)
   assert.deepEqual(pageErrors.map((error) => error.message), [])
   console.log(`Browser smoke passed: v86${runQemu ? ' + QEMU x86-64 controls/OneDrive' : ''}`)
