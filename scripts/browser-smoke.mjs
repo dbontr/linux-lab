@@ -280,6 +280,10 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const pageErrors = []
+  page.on('console', (message) => {
+    const text = message.text()
+    if (text.includes('LINUXLAB_LONGJMP_STACK')) console.error('Browser diagnostic console:', text)
+  })
   page.on('pageerror', (error) => {
     pageErrors.push(error)
     console.error('Browser page error:', {
