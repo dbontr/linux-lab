@@ -10,6 +10,8 @@ import type {
 const MESSAGE_SOURCE = 'linux-lab-qemu'
 const HOST_PATH = 'runtime/qemu-host.html'
 const READY_TIMEOUT_MS = 20_000
+const CONTROL_TIMEOUT_MS = 5_000
+const TOKEN_REFRESH_MS = 5 * 60_000
 
 interface QemuMessage {
   source?: string
@@ -17,12 +19,19 @@ interface QemuMessage {
   isolated?: boolean
   message?: string
   network?: boolean
+  storage?: boolean
+  id?: number
+  ok?: boolean
+  action?: string
 }
 
 export class QemuRuntime implements VirtualMachineRuntime {
   private iframe: HTMLIFrameElement | null = null
   private lastManifest: DistroManifest | null = null
   private isRunning = false
+  private nextControlId = 1
+  private tokenTimer: number | null = null
+  private readonly pendingControls = new Map<number, { resolve: () => void; reject: (error: Error) => void }>()
   private readonly options: RuntimeOptions
   private readonly status: (status: RuntimeStatus) => void
 
@@ -64,21 +73,40 @@ export class QemuRuntime implements VirtualMachineRuntime {
     const firmware = manifest.firmware && manifest.firmware !== 'auto'
       ? manifest.firmware
       : await detectFirmwareKind(file, manifest.media.kind)
+    let oneDriveToken: string | undefined
+    if (this.options.filesystemAccessToken) {
+      try {
+        oneDriveToken = await this.options.filesystemAccessToken()
+      } catch {
+        oneDriveToken = undefined
+      }
+    }
     iframe.contentWindow?.postMessage({
       type: 'boot',
       file,
       kind: manifest.media.kind,
       firmware,
       memoryMiB: manifest.memoryMiB,
+      oneDriveToken,
     }, location.origin)
+    this.startTokenRefresh()
   }
 
   async toggleRun(): Promise<void> {
-    throw new Error('Pause is not available for the x86-64 runtime')
+    if (!this.iframe) throw new Error('No Linux session is running')
+    const nextRunning = !this.isRunning
+    await this.sendControl(nextRunning ? 'resume' : 'pause')
+    this.isRunning = nextRunning
+    this.status({
+      phase: nextRunning ? 'running' : 'stopped',
+      message: `${this.lastManifest?.name ?? 'Linux'} is ${nextRunning ? 'running' : 'stopped'}`,
+      runtime: 'qemu',
+    })
   }
 
-  restart(): void {
-    if (this.lastManifest) void this.boot(this.lastManifest)
+  async restart(): Promise<void> {
+    if (!this.lastManifest) throw new Error('No Linux session is running')
+    await this.boot(this.lastManifest)
   }
 
   fullscreen(): void {
@@ -86,12 +114,19 @@ export class QemuRuntime implements VirtualMachineRuntime {
     void this.iframe.requestFullscreen()
   }
 
-  sendText(_text: string): void {
-    throw new Error('Programmatic keyboard input is not available for the x86-64 runtime')
+  async sendText(text: string): Promise<void> {
+    if (!this.iframe) throw new Error('No Linux session is running')
+    await this.sendControl('send-text', text)
   }
 
   async destroy(): Promise<void> {
     window.removeEventListener('message', this.onRuntimeMessage)
+    if (this.tokenTimer !== null) {
+      window.clearInterval(this.tokenTimer)
+      this.tokenTimer = null
+    }
+    for (const pending of this.pendingControls.values()) pending.reject(new Error('QEMU session ended'))
+    this.pendingControls.clear()
     if (!this.iframe) return
     this.iframe.remove()
     this.iframe = null
@@ -100,6 +135,37 @@ export class QemuRuntime implements VirtualMachineRuntime {
     this.status({ phase: 'idle', message: 'No distro is running', runtime: 'qemu' })
   }
 
+  private sendControl(action: 'pause' | 'resume' | 'send-text', text?: string): Promise<void> {
+    const iframe = this.iframe
+    if (!iframe) return Promise.reject(new Error('No Linux session is running'))
+    const id = this.nextControlId++
+    return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        this.pendingControls.delete(id)
+        reject(new Error(`QEMU ${action} command timed out`))
+      }, CONTROL_TIMEOUT_MS)
+      this.pendingControls.set(id, {
+        resolve: () => { window.clearTimeout(timeout); resolve() },
+        reject: (error) => { window.clearTimeout(timeout); reject(error) },
+      })
+      iframe.contentWindow?.postMessage({ type: 'control', id, action, text }, location.origin)
+    })
+  }
+
+  private startTokenRefresh(): void {
+    if (!this.options.filesystemAccessToken || this.tokenTimer !== null) return
+    this.tokenTimer = window.setInterval(() => void this.refreshToken(), TOKEN_REFRESH_MS)
+  }
+
+  private async refreshToken(): Promise<void> {
+    if (!this.options.filesystemAccessToken || !this.iframe) return
+    try {
+      const token = await this.options.filesystemAccessToken()
+      this.iframe.contentWindow?.postMessage({ type: 'onedrive-token', token }, location.origin)
+    } catch {
+      // The active token may still be valid. Actual storage errors surface from QEMU.
+    }
+  }
   private waitForReady(iframe: HTMLIFrameElement): Promise<{ isolated: boolean }> {
     return new Promise((resolve, reject) => {
       const timeout = window.setTimeout(() => {
@@ -130,10 +196,17 @@ export class QemuRuntime implements VirtualMachineRuntime {
       this.isRunning = true
       this.status({
         phase: 'running',
-        message: `${this.lastManifest?.name ?? 'Linux'} is running${event.data.network ? '; browser network bridge ready' : '; offline'}`,
+        message: `${this.lastManifest?.name ?? 'Linux'} is running${event.data.network ? '; browser network bridge ready' : '; offline'}${event.data.storage ? '; OneDrive bridge attached' : this.options.filesystemAccessToken ? '; OneDrive unavailable' : ''}`,
         runtime: 'qemu',
       })
+    } else if (event.data.type === 'control-result' && typeof event.data.id === 'number') {
+      const pending = this.pendingControls.get(event.data.id)
+      if (!pending) return
+      this.pendingControls.delete(event.data.id)
+      if (event.data.ok) pending.resolve()
+      else pending.reject(new Error(event.data.message ?? `QEMU ${event.data.action ?? 'control'} failed`))
     } else if (event.data.type === 'error') {
+      this.isRunning = false
       this.status({
         phase: 'error',
         message: event.data.message ?? 'The x86-64 runtime failed',

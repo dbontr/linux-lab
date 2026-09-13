@@ -17,6 +17,7 @@ export interface HostFilesystem9P {
 export interface RuntimeOptions {
   screen: HTMLElement
   filesystem?: HostFilesystem9P
+  filesystemAccessToken?: () => Promise<string>
   onStatus?: (status: RuntimeStatus) => void
 }
 
@@ -25,8 +26,8 @@ export interface VirtualMachineRuntime {
   readonly active: boolean
   boot(manifest: DistroManifest): Promise<void>
   toggleRun(): Promise<void>
-  restart(): void
+  restart(): Promise<void>
   fullscreen(): void
-  sendText(text: string): void
+  sendText(text: string): Promise<void>
   destroy(): Promise<void>
 }

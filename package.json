@@ -1,22 +1,24 @@
 {
   "name": "linux-lab",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "check:runtime": "node --check public/runtime/qemu-host.js && node --check runtime-build/qemu/patch-networking.mjs && node --check runtime-build/qemu/package-network-licenses.mjs && node --check runtime-build/qemu/patch-browser-media.mjs && node --check runtime-build/qemu/network/bundle.mjs",
+    "test": "vitest run && node --test runtime-build/qemu/*.node.mjs",
+    "check:runtime": "node --check public/runtime/qemu-host.js && node --check runtime-build/qemu/pre.js && node --check runtime-build/qemu/patch-networking.mjs && node --check runtime-build/qemu/package-network-licenses.mjs && node --check runtime-build/qemu/patch-browser-media.mjs && node --check runtime-build/qemu/patch-onedrive.mjs && node --check runtime-build/qemu/patch-control.mjs && node --check runtime-build/qemu/patch-rr-wasm-init.mjs && node --check runtime-build/qemu/patch-sdl-software.mjs && node --check runtime-build/qemu/patch-sdl-framebuffer.mjs && node --check runtime-build/qemu/network/bundle.mjs",
     "check": "npm run check:runtime && npm run test && npm run build",
     "sync:distros": "node scripts/sync-distros.mjs",
-    "verify:media": "node scripts/verify-built-media.mjs"
+    "verify:media": "node scripts/verify-built-media.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {
     "v86": "^0.5.458"
   },
   "devDependencies": {
+    "playwright-core": "1.63.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"

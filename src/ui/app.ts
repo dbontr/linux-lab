@@ -1,7 +1,7 @@
 import { createCustomManifest, loadCatalog } from '../catalog/catalog'
 import { detectMediaKind, firmwareKindLabel, mediaKindLabel } from '../catalog/mediaProbe'
 import type { DistroManifest, FirmwareKind, MediaKind, RuntimeKind } from '../catalog/types'
-import { beginOneDriveConnect, disconnectOneDrive, finishOneDriveCallback, getOneDriveSession } from '../onedrive/auth'
+import { beginOneDriveConnect, disconnectOneDrive, finishOneDriveCallback, getOneDriveAccessToken, getOneDriveSession } from '../onedrive/auth'
 import { OneDriveFilesystem } from '../onedrive/graph'
 import { OneDrive9PServer } from '../onedrive/p9Server'
 import { LinuxRuntime, runtimeForManifest, type RuntimeStatus } from '../runtime/linuxRuntime'
@@ -112,11 +112,11 @@ export class LinuxLabApp {
     this.query<HTMLFormElement>('[data-custom-form]').addEventListener('submit', (event) => void this.submitCustom(event))
     this.query<HTMLButtonElement>('[data-boot]').addEventListener('click', () => void this.bootSelected())
     this.query<HTMLButtonElement>('[data-pause]').addEventListener('click', () => void this.togglePause())
-    this.query<HTMLButtonElement>('[data-restart]').addEventListener('click', () => this.runtime?.restart())
+    this.query<HTMLButtonElement>('[data-restart]').addEventListener('click', () => void this.restartSession())
     this.query<HTMLButtonElement>('[data-fullscreen]').addEventListener('click', () => this.runtime?.fullscreen())
     this.query<HTMLButtonElement>('[data-copy-mount]').addEventListener('click', () => void this.copyMountCommand())
     this.query<HTMLButtonElement>('[data-copy-network]').addEventListener('click', () => void this.copyNetworkCommand())
-    this.query<HTMLButtonElement>('[data-send-mount]').addEventListener('click', () => this.sendMountCommand())
+    this.query<HTMLButtonElement>('[data-send-mount]').addEventListener('click', () => void this.sendMountCommand())
     this.query<HTMLButtonElement>('[data-onedrive]').addEventListener('click', () => void this.toggleOneDrive())
   }
 
@@ -128,6 +128,7 @@ export class LinuxLabApp {
     this.runtime = new LinuxRuntime({
       screen,
       filesystem,
+      filesystemAccessToken: this.oneDriveConnected ? getOneDriveAccessToken : undefined,
       onStatus: (status) => this.updateRuntimeStatus(status),
     })
   }
@@ -189,9 +190,7 @@ export class LinuxLabApp {
     }
     const qemuSelected = distro ? runtimeForManifest(distro) === 'qemu' : false
     this.query<HTMLElement>('[data-network-section]').hidden = !qemuSelected
-    this.query<HTMLElement>('[data-storage-help]').textContent = qemuSelected
-      ? 'OneDrive host mounting is available in v86 guests. The QEMU filesystem bridge is not active yet.'
-      : 'When connected before boot, OneDrive is exposed to Linux as the host9p virtio filesystem.'
+    this.query<HTMLElement>('[data-storage-help]').textContent = 'When connected before boot, OneDrive is exposed to Linux as the host9p virtio filesystem.'
     this.updateOneDriveUI()
     this.query<HTMLButtonElement>('[data-boot]').disabled = !distro
   }
@@ -211,8 +210,21 @@ export class LinuxLabApp {
 
   private async togglePause(): Promise<void> {
     if (!this.runtime?.active) return
-    await this.runtime.toggleRun()
-    this.query<HTMLButtonElement>('[data-pause]').textContent = this.runtime.running ? 'Pause' : 'Resume'
+    try {
+      await this.runtime.toggleRun()
+      this.query<HTMLButtonElement>('[data-pause]').textContent = this.runtime.running ? 'Pause' : 'Resume'
+    } catch (error) {
+      this.setNotice(errorMessage(error), 'error')
+    }
+  }
+
+  private async restartSession(): Promise<void> {
+    if (!this.runtime?.active) return
+    try {
+      await this.runtime.restart()
+    } catch (error) {
+      this.setNotice(errorMessage(error), 'error')
+    }
   }
 
   private updateRuntimeStatus(status: RuntimeStatus): void {
@@ -226,11 +238,10 @@ export class LinuxLabApp {
     fill.style.width = status.progress === undefined ? '18%' : `${Math.max(0, Math.min(1, status.progress)) * 100}%`
     fill.classList.toggle('indeterminate', loading && status.progress === undefined)
     const active = status.phase === 'running' || status.phase === 'stopped'
-    const qemu = status.runtime === 'qemu'
-    this.query<HTMLButtonElement>('[data-pause]').disabled = !active || qemu
+    this.query<HTMLButtonElement>('[data-pause]').disabled = !active
     this.query<HTMLButtonElement>('[data-restart]').disabled = !active
     this.query<HTMLButtonElement>('[data-fullscreen]').disabled = !active
-    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !active || qemu
+    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !active
     this.query<HTMLButtonElement>('[data-pause]').textContent = status.phase === 'stopped' ? 'Resume' : 'Pause'
     if (status.phase === 'error') this.setNotice(status.message, 'error')
   }
@@ -256,12 +267,11 @@ export class LinuxLabApp {
     const label = this.query<HTMLElement>('[data-storage-label]')
     const dot = this.query<HTMLElement>('[data-storage-dot]')
     const tools = this.query<HTMLElement>('[data-mount-tools]')
-    const qemu = this.selected ? runtimeForManifest(this.selected) === 'qemu' : false
     button.textContent = this.oneDriveConnected ? 'Disconnect OneDrive' : 'Connect OneDrive'
     label.textContent = this.oneDriveConnected ? 'OneDrive connected' : 'OneDrive disconnected'
     dot.classList.toggle('connected', this.oneDriveConnected)
-    tools.hidden = !this.oneDriveConnected || qemu
-    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !this.runtime?.active || qemu
+    tools.hidden = !this.oneDriveConnected
+    this.query<HTMLButtonElement>('[data-send-mount]').disabled = !this.oneDriveConnected || !this.runtime?.active
   }
   private async copyNetworkCommand(): Promise<void> {
     try {
@@ -281,9 +291,9 @@ export class LinuxLabApp {
     }
   }
 
-  private sendMountCommand(): void {
+  private async sendMountCommand(): Promise<void> {
     try {
-      this.runtime?.sendText(`${MOUNT_COMMAND}\n`)
+      await this.runtime?.sendText(`${MOUNT_COMMAND}\n`)
       this.setNotice('Mount command sent to the virtual keyboard.', 'info')
     } catch (error) {
       this.setNotice(errorMessage(error), 'error')

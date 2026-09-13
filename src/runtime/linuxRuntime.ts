@@ -35,16 +35,16 @@ export class LinuxRuntime implements VirtualMachineRuntime {
     await this.requireCurrent().toggleRun()
   }
 
-  restart(): void {
-    this.requireCurrent().restart()
+  async restart(): Promise<void> {
+    await this.requireCurrent().restart()
   }
 
   fullscreen(): void {
     this.requireCurrent().fullscreen()
   }
 
-  sendText(text: string): void {
-    this.requireCurrent().sendText(text)
+  async sendText(text: string): Promise<void> {
+    await this.requireCurrent().sendText(text)
   }
 
   async destroy(): Promise<void> {
