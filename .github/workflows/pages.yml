@@ -11,15 +11,15 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -30,25 +30,51 @@ jobs:
         run: sudo bash distro-build/alpine/build.sh
       - name: Verify built distro media
         run: npm run verify:media
+      - name: Compute x86-64 QEMU cache key
+        id: qemu-key
+        env:
+          INPUT_HASH: ${{ hashFiles('runtime-build/qemu/**', '!runtime-build/qemu/*.node.mjs') }}
+        run: echo "key=qemu-wasm-${RUNNER_OS}-${INPUT_HASH}" >> "$GITHUB_OUTPUT"
       - name: Restore x86-64 QEMU runtime
         id: qemu-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v6
         with:
           path: public/qemu
-          key: qemu-wasm-${{ runner.os }}-${{ hashFiles('runtime-build/qemu/**') }}
+          key: qemu-wasm-Linux-206bf34d3268d81c31876d70956fefae78d2ba10f564ebb5e7be8a1cc055608e
       - name: Build x86-64 QEMU runtime
         if: steps.qemu-cache.outputs.cache-hit != 'true'
         run: bash runtime-build/qemu/build.sh
       - name: Verify x86-64 QEMU runtime
         run: (cd public/qemu && sha256sum -c SHA256SUMS)
+      - name: Save x86-64 QEMU runtime
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: public/qemu
+          key: qemu-wasm-Linux-206bf34d3268d81c31876d70956fefae78d2ba10f564ebb5e7be8a1cc055608e
+      - name: Upload QEMU diagnostic runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-diagnostic-runtime
+          path: public/qemu
+          retention-days: 1
+      - name: Instrument QEMU longjmp diagnostics
+        run: node scripts/diagnose-qemu-longjmp.mjs public/qemu/out.js public/qemu/qemu-system-x86_64.worker.js
       - run: npm test
       - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - name: Install Chromium for browser smoke
+        run: npx playwright-core install --with-deps chromium
+      - name: Browser runtime smoke
+        env:
+          LINUX_LAB_SMOKE_QEMU: '1'
+        run: npm run test:browser
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -57,4 +83,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

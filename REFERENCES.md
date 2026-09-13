@@ -10,15 +10,24 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [v86 npm package](https://www.npmjs.com/package/v86) — bundler-distributed JavaScript/Wasm runtime used by the 32-bit backend.
 - [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) — QEMU system emulation compiled to WebAssembly; Linux Lab pins commit `0ef7b4e2814b231705d8371dd7997f5b72e70baf` for the x86-64 backend.
 - [qemu-wasm browser networking example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/networking) — browser-side QEMU socket networking and guest proxy/certificate setup.
+- [qemu-wasm VM run-state control](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/system/cpus.c) — `vm_stop()`, `vm_start()`, and QEMU clock transitions provide the native Pause/Resume boundary used by Linux Lab.
+- [qemu-wasm run-state model](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/system/runstate.c) — authoritative QEMU run-state transitions, including `RUN_STATE_PAUSED`.
+- [qemu-wasm single-thread TCG RR loop](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/accel/tcg/tcg-accel-ops-rr.c) — browser x86-64 uses single-thread TCG; Linux Lab initializes the Wasm TB runtime on the RR vCPU thread before execution and after thread recreation.
+- [QEMU AIO bottom-half API](https://github.com/ktock/qemu-wasm/blob/0ef7b4e2814b231705d8371dd7997f5b72e70baf/include/block/aio.h) — persistent `QEMUBH` callbacks transfer Pause, Resume, and text requests onto QEMU's owning thread.
 - [QEMU](https://www.qemu.org/) — PC machine, x86-64 CPU, IDE/optical disk, VGA, and firmware semantics inherited by the compatibility backend.
 
 ## Browser runtime support
 
+- [SDL 2.24.2 Emscripten framebuffer](https://github.com/libsdl-org/SDL/blob/55b03c7493a7abed33cf803d1380a40fa8af903f/src/video/emscripten/SDL_emscriptenframebuffer.c) — pinned software-renderer framebuffer source used by QEMU's `gl=off` display; Linux Lab treats zero-area frames as no-op presentation and Canvas 2D presents valid frames on the main thread.
 - [MDN blob URLs](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/blob) — blob URLs support ranged fetches from browser-owned `Blob` data, used by the QEMU local-media block protocol.
 - [MDN synchronous XMLHttpRequest from a Worker](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Synchronous_and_Asynchronous_Requests) — synchronous worker requests provide the blocking read boundary required by QEMU block I/O without blocking the page UI.
+- [Emscripten compiler settings](https://emscripten.org/docs/tools_reference/settings_reference.html) — pthread and WebAssembly runtime settings used by the QEMU browser build.
+- [Emscripten Asyncify](https://emscripten.org/docs/porting/asyncify.html) — asynchronous call support retained by the pinned qemu-wasm build for its existing FFI integration.
 - [Emscripten File System API](https://emscripten.org/docs/api_reference/Filesystem-API.html) — runtime filesystem used to expose the browser proxy certificate to QEMU through `virtfs`.
-- [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS` bridge used by the QEMU block protocol for browser range reads.
+- [Emscripten interacting with code](https://emscripten.org/docs/porting/connecting_cpp_and_javascript/Interacting-with-code.html) — `EM_JS`, exported C functions, and `ccall` used by the QEMU media, OneDrive, and control bridges.
 - [Emscripten ports](https://emscripten.org/docs/compiling/Building-Projects.html#emscripten-ports) — SDL2 port used for QEMU display and browser input integration.
+- [xterm-pty v0.10.1](https://github.com/mame/xterm-pty/tree/v0.10.1) — Emscripten PTY bridge ABI linked into the QEMU-Wasm runtime; Linux Lab provides the compatible headless slave contract while SDL owns guest input.
+- [qemu-wasm x86-64 browser example](https://github.com/ktock/qemu-wasm/tree/0ef7b4e2814b231705d8371dd7997f5b72e70baf/examples/x86_64) — upstream browser initialization pattern for the linked PTY bridge and modularized QEMU runtime.
 - [container2wasm](https://github.com/container2wasm/container2wasm/tree/v0.5.0) — pinned c2w-net-proxy v0.5.0 runtime used for browser HTTP/HTTPS forwarding.
 - [esbuild](https://esbuild.github.io/) — pinned build-only bundler for the QEMU browser networking bridge.
 - [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) — cross-origin isolation on static hosts such as GitHub Pages; Linux Lab pins commit `7b1d2a092d0d2dd2b7270b6f12f13605de26f214`.
@@ -37,6 +46,7 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Upload small files](https://learn.microsoft.com/en-us/graph/api/driveitem-put-content) — direct file writes.
 - [Create an upload session](https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession) — resumable large-file writes.
 - [Move a DriveItem](https://learn.microsoft.com/en-us/graph/api/driveitem-move) — rename and move semantics.
+- [Delete a DriveItem](https://learn.microsoft.com/en-us/graph/api/driveitem-delete) — file and empty-directory removal behavior.
 
 ## Distribution and build artifacts
 
@@ -50,15 +60,21 @@ These sources define Linux Lab's external interfaces, compatibility assumptions,
 - [Vite static deployment guide](https://vite.dev/guide/static-deploy.html) — repository-relative base path and Pages deployment guidance.
 - [GitHub Pages custom Actions workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) — official Pages artifact/deploy workflow.
 - [GitHub Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits) — hosting constraints relevant to boot-image size and traffic.
+- [Playwright browser automation](https://playwright.dev/docs/api/class-browsertype) — Chromium launch and browser-level release smoke verification.
 
 ## Project decisions derived from these references
 
 - Linux Lab uses two runtime backends: v86 for the prepared 32-bit path and QEMU-Wasm for x86-64 or architecture-unknown PC ISO/IMG media.
 - Local ISO/IMG uploads remain browser `File` objects. QEMU reads them through a read-only `linuxlab:` block protocol backed by ranged reads from a same-origin `blob:` URL, so large source media is not duplicated into Wasm memory before boot.
 - The QEMU runtime runs in a same-origin iframe. Destroying the iframe is the VM lifecycle boundary for Emscripten pthread workers and global runtime state.
+- QEMU's `gl=off` SDL display is forced to the software renderer so its Emscripten framebuffer presents through Canvas 2D on the browser main thread instead of requiring WebGL inside the QEMU pthread.
+- QEMU browser builds use Emscripten `dlmalloc` so allocator integrity and predictable threaded I/O behavior take priority over allocator-level contention scaling.
+- The QEMU browser profile is explicitly single-vCPU and single-thread TCG. Pause and Resume are scheduled through persistent QEMU bottom halves and use QEMU's native `vm_stop(RUN_STATE_PAUSED)` and `vm_start()` transitions, which freeze and resume guest time through QEMU's normal run-state machinery.
+- The x86-64 RR vCPU thread calls `init_wasm32()` before executing translated blocks so generated-Wasm dispatcher state exists when a paused VM resumes or the RR thread is recreated. Browser control calls do not allocate QEMU objects; text input uses its own persistent QEMU bottom half.
 - QEMU-Wasm requires cross-origin isolation for WebAssembly threads, so Pages installs a pinned same-origin COOP/COEP service worker.
 - QEMU browser networking uses a page-local WebSocket interceptor and c2w-net-proxy; it does not install a second service worker, which preserves the COOP/COEP ownership boundary.
 - OneDrive remains a host-owned credential boundary; OAuth tokens are never exposed to the Linux guest.
+- Both runtime backends expose OneDrive under the `host9p` mount tag. QEMU maps Graph-backed ordinary files and directories through a host-only Emscripten filesystem adapter with lazy reads and explicit write-back.
 - OneDrive is mounted as user storage rather than used as a Linux block device because Microsoft Graph exposes object/file semantics rather than a POSIX block filesystem.
 - Linux Lab implements the `9P2000.L` subset needed for ordinary file and directory workflows. Unsupported Unix object types fail explicitly instead of being silently misrepresented.
 - External BIOS/media/build sources are pinned or SHA-256 verified; generated VM artifacts are produced by GitHub Actions rather than committed as large binaries.

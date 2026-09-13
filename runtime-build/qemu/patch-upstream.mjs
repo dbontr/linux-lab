@@ -16,4 +16,13 @@ const replacement = [
 const source = await readFile(dockerfile, 'utf8')
 const matches = source.split(expected).length - 1
 if (matches !== 1) throw new Error(`Expected one upstream zlib download line, found ${matches}`)
-await writeFile(dockerfile, source.replace(expected, replacement), 'utf8')
+const allocatorSetting = '-sMALLOC=mimalloc'
+const allocatorMatches = source.split(allocatorSetting).length - 1
+if (allocatorMatches !== 2) {
+  throw new Error(`Expected two upstream mimalloc settings, found ${allocatorMatches}`)
+}
+
+const patched = source
+  .replace(expected, replacement)
+  .replaceAll(allocatorSetting, '-sMALLOC=dlmalloc')
+await writeFile(dockerfile, patched, 'utf8')
