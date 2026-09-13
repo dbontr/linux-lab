@@ -43,6 +43,7 @@ node "$SCRIPT_DIR/patch-control.mjs" \
   "$SOURCE_DIR/system/meson.build" \
   "$SOURCE_DIR/system/main.c"
 node "$SCRIPT_DIR/patch-rr-wasm-init.mjs" "$SOURCE_DIR/accel/tcg/tcg-accel-ops-rr.c"
+node "$SCRIPT_DIR/patch-wasm-coroutine-rewind.mjs" "$SOURCE_DIR/tcg/wasm32.c"
 node "$SCRIPT_DIR/patch-sdl-software.mjs" "$SOURCE_DIR/ui/sdl2.c"
 
 git clone --filter=blob:none --no-checkout https://github.com/libsdl-org/SDL.git "$SDL_SOURCE_DIR"

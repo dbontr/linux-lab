@@ -7,6 +7,7 @@ const source = readFileSync(new URL('../../public/runtime/qemu-host.js', import.
 const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.url), 'utf8')
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
 const rrWasmPatchSource = readFileSync(new URL('./patch-rr-wasm-init.mjs', import.meta.url), 'utf8')
+const coroutineRewindPatchSource = readFileSync(new URL('./patch-wasm-coroutine-rewind.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
 
@@ -175,6 +176,13 @@ test('QEMU build uses the integrity-first allocator consistently', () => {
   assert.match(upstreamPatchSource, /replaceAll\(allocatorSetting, '-sMALLOC=dlmalloc'\)/)
   assert.match(upstreamPatchSource, /allocatorMatches !== 2/)
 })
+test('QEMU coroutine rewind preserves translated-block continuation state', () => {
+  assert.match(buildSource, /patch-wasm-coroutine-rewind\.mjs/)
+  assert.match(coroutineRewindPatchSource, /Asyncify\.state === Asyncify\.State\.Rewinding/)
+  assert.match(coroutineRewindPatchSource, /if \(!wasm32_asyncify_is_rewinding\(\)\)/)
+  assert.match(coroutineRewindPatchSource, /ctx\.unwinding = 1/)
+})
+
 test('QEMU native pause owns vCPU and clock transitions', () => {
   assert.match(controlSource, /qemu_bh_new\(linuxlab_pause_bh, NULL\)/)
   assert.match(controlSource, /qemu_bh_new\(linuxlab_resume_bh, NULL\)/)
