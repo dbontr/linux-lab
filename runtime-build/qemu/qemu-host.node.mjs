@@ -8,6 +8,7 @@ const controlSource = readFileSync(new URL('./linuxlab-control.c', import.meta.u
 const controlPatchSource = readFileSync(new URL('./patch-control.mjs', import.meta.url), 'utf8')
 const rrWasmPatchSource = readFileSync(new URL('./patch-rr-wasm-init.mjs', import.meta.url), 'utf8')
 const coroutineRewindPatchSource = readFileSync(new URL('./patch-wasm-coroutine-rewind.mjs', import.meta.url), 'utf8')
+const sjljBoundaryPatchSource = readFileSync(new URL('./patch-wasm-sjlj-boundary.mjs', import.meta.url), 'utf8')
 const buildSource = readFileSync(new URL('./build.sh', import.meta.url), 'utf8')
 const upstreamPatchSource = readFileSync(new URL('./patch-upstream.mjs', import.meta.url), 'utf8')
 
@@ -181,6 +182,14 @@ test('QEMU coroutine rewind preserves translated-block continuation state', () =
   assert.match(coroutineRewindPatchSource, /Asyncify\.state === Asyncify\.State\.Rewinding/)
   assert.match(coroutineRewindPatchSource, /if \(!wasm32_asyncify_is_rewinding\(\)\)/)
   assert.match(coroutineRewindPatchSource, /ctx\.unwinding = 1/)
+})
+
+test('QEMU generated TB boundary preserves Emscripten SjLj', () => {
+  assert(buildSource.includes('patch-wasm-sjlj-boundary.mjs'))
+  assert(sjljBoundaryPatchSource.includes('stackSave()'))
+  assert(sjljBoundaryPatchSource.includes('stackRestore(stackPointer)'))
+  assert(sjljBoundaryPatchSource.includes('error !== error + 0'))
+  assert(sjljBoundaryPatchSource.includes('_setThrew(1, 0)'))
 })
 
 test('QEMU native pause owns vCPU and clock transitions', () => {
